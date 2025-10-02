@@ -8,26 +8,361 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      (function () {
+        const root = document.documentElement;
+        const cycle = ['light', 'dark', 'oled'];
+        const apply = (mode, persist) => {
+          root.classList.remove('dark', 'oled');
+          if (mode === 'dark') {
+            root.classList.add('dark');
+          }
+          if (mode === 'oled') {
+            root.classList.add('dark');
+            root.classList.add('oled');
+          }
+          root.dataset.theme = mode;
+          if (persist) {
+            localStorage.setItem('theme', mode);
+          }
+        };
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const initial = cycle.includes(savedTheme) ? savedTheme : prefersDark ? 'dark' : 'light';
+        apply(initial, false);
+        window.__themeController = {
+          apply: (mode) => apply(mode, true),
+          current: () => root.dataset.theme || 'light',
+          cycle,
+        };
+      })();
+      window.tailwind = window.tailwind || {};
+      window.tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#eef2ff',
+                100: '#e0e7ff',
+                200: '#c7d2fe',
+                500: '#6366f1',
+                600: '#4f46e5',
+                700: '#4338ca',
+              },
+            },
+            boxShadow: {
+              focus: '0 0 0 3px rgba(99, 102, 241, 0.35)',
+            },
+          },
+        },
+      };
+    </script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <link rel="stylesheet" href="/static/css/styles.css" />
   </head>
-  <body class="bg-slate-100 min-h-screen font-[Inter] text-slate-800">
-    <nav class="bg-white border-b border-slate-200">
+  <body class="bg-slate-100 dark:bg-slate-950 min-h-screen font-[Inter] text-slate-800 dark:text-slate-100 transition-colors preloader-active">
+    <div id="preloader" class="preloader" role="status" aria-live="polite">
+      <div class="preloader-content">
+        <img
+          src="/static/img/is-logo.png"
+          alt="Inbox Steward logo"
+          class="preloader-logo"
+          data-preloader-logo
+        />
+        <div class="preloader-spinner" aria-hidden="true"></div>
+        <p class="preloader-text">Warming up your Inbox Steward…</p>
+      </div>
+    </div>
+    <nav class="relative bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 backdrop-blur z-40">
       <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <div class="text-2xl font-semibold text-indigo-600">{{ settings.app_name }}</div>
-        <div class="flex items-center gap-4 text-sm font-medium text-slate-600">
-          <a href="/" class="hover:text-indigo-600">Dashboard</a>
-          <a href="/what-if" class="hover:text-indigo-600">What If</a>
-          <a href="/settings" class="hover:text-indigo-600">Settings</a>
-          <a href="/docs" class="hover:text-indigo-600">API Docs</a>
+        <div class="text-2xl font-semibold text-brand-600 dark:text-brand-400">{{ settings.app_name }}</div>
+        <div class="flex items-center gap-3">
+          <div class="hidden md:flex items-center gap-4 text-sm font-medium text-slate-600 dark:text-slate-300">
+            <a href="/" data-nav-index="0" class="hover:text-brand-600 dark:hover:text-brand-400">Dashboard</a>
+            <a href="/what-if" data-nav-index="1" class="hover:text-brand-600 dark:hover:text-brand-400">What If</a>
+            <a href="/settings" data-nav-index="2" class="hover:text-brand-600 dark:hover:text-brand-400">Settings</a>
+            <a href="/debug" data-nav-index="3" class="hover:text-brand-600 dark:hover:text-brand-400">Debug</a>
+            <a
+              href="/docs"
+              data-nav-index="4"
+              class="hover:text-brand-600 dark:hover:text-brand-400"
+              target="_blank"
+              rel="noopener noreferrer"
+              >API Docs</a
+            >
+            <button
+              type="button"
+              data-theme-toggle
+              class="inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+            >
+              <span data-theme-icon class="text-base leading-none">☀️</span>
+              <span data-theme-label>Light</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            data-theme-toggle
+            class="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-lg text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+            aria-label="Switch theme"
+          >
+            <span data-theme-icon class="leading-none">☀️</span>
+          </button>
+          <button
+            type="button"
+            class="mobile-nav-toggle md:hidden"
+            data-mobile-nav-toggle
+            aria-expanded="false"
+            aria-controls="mobile-nav-panel"
+          >
+            <span class="sr-only">Toggle navigation</span>
+            <span class="mobile-nav-toggle-line"></span>
+            <span class="mobile-nav-toggle-line"></span>
+            <span class="mobile-nav-toggle-line"></span>
+          </button>
+        </div>
+      </div>
+      <div id="mobile-nav-panel" class="mobile-nav-panel md:hidden" aria-hidden="true">
+        <div class="mobile-nav-panel-inner">
+          <a href="/" data-nav-index="0" class="mobile-nav-link">Dashboard</a>
+          <a href="/what-if" data-nav-index="1" class="mobile-nav-link">What If</a>
+          <a href="/settings" data-nav-index="2" class="mobile-nav-link">Settings</a>
+          <a href="/debug" data-nav-index="3" class="mobile-nav-link">Debug</a>
+          <a
+            href="/docs"
+            data-nav-index="4"
+            class="mobile-nav-link"
+            target="_blank"
+            rel="noopener noreferrer"
+            >API Docs</a
+          >
+          <div class="mobile-nav-divider"></div>
+          <button
+            type="button"
+            data-theme-toggle
+            class="mobile-nav-theme"
+          >
+            <span data-theme-icon class="leading-none">☀️</span>
+            <span data-theme-label class="uppercase text-xs tracking-wide">Light</span>
+          </button>
         </div>
       </div>
     </nav>
+    <div id="mobile-nav-backdrop" class="mobile-nav-backdrop md:hidden" aria-hidden="true"></div>
     <main class="max-w-6xl mx-auto px-6 py-10">
       {% block content %}{% endblock %}
     </main>
-    <footer class="max-w-6xl mx-auto px-6 py-6 text-sm text-slate-500">
+    <footer class="max-w-6xl mx-auto px-6 py-6 text-sm text-slate-500 dark:text-slate-400">
       &copy; {{ current_year }} Inbox Steward. Made with local AI magic.
     </footer>
+    <script>
+      const controller = window.__themeController;
+      const icons = { light: '☀️', dark: '🌙', oled: '🖤' };
+      const labels = { light: 'Light', dark: 'Dark', oled: 'OLED' };
+      const themeToggles = Array.from(document.querySelectorAll('[data-theme-toggle]'));
+
+      const updateThemeToggle = (toggle) => {
+        if (!controller || !toggle) return;
+        const current = controller.current();
+        const icon = toggle.querySelector('[data-theme-icon]');
+        const label = toggle.querySelector('[data-theme-label]');
+        if (icon) icon.textContent = icons[current] || '☀️';
+        if (label) label.textContent = labels[current] || current;
+        toggle.setAttribute('aria-label', `Switch theme (current: ${labels[current] || current})`);
+      };
+
+      const updateAllThemeToggles = () => {
+        themeToggles.forEach((toggle) => updateThemeToggle(toggle));
+      };
+
+      if (controller && themeToggles.length) {
+        themeToggles.forEach((toggle) => {
+          toggle.addEventListener('click', () => {
+            const cycle = controller.cycle;
+            const current = controller.current();
+            const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
+            controller.apply(next);
+            updateAllThemeToggles();
+          });
+        });
+        updateAllThemeToggles();
+      }
+
+      const preloader = document.getElementById('preloader');
+      const preloaderLogo = document.querySelector('[data-preloader-logo]');
+      const PRELOADER_MIN_MS = 900;
+      const PRELOADER_FAILSAFE_MS = 7000;
+      const preloaderStart = performance.now();
+      let preloaderLaunchStarted = false;
+
+      if (!preloader) {
+        document.body.classList.remove('preloader-active');
+      }
+
+      const removePreloader = () => {
+        if (!preloader || preloader.classList.contains('is-hidden')) {
+          document.body.classList.remove('preloader-active');
+          return;
+        }
+        preloader.classList.add('is-hidden');
+        document.body.classList.remove('preloader-active');
+        window.setTimeout(() => {
+          if (preloader && preloader.parentElement) {
+            preloader.parentElement.removeChild(preloader);
+          }
+        }, 900);
+      };
+
+      const launchPreloader = () => {
+        if (!preloader || preloaderLaunchStarted) {
+          document.body.classList.remove('preloader-active');
+          return;
+        }
+        preloaderLaunchStarted = true;
+        preloader.classList.add('is-launching');
+        document.body.classList.remove('preloader-active');
+        window.setTimeout(removePreloader, 820);
+      };
+
+      const finishPreloader = () => {
+        if (!preloader || preloaderLaunchStarted) {
+          return;
+        }
+        const elapsed = performance.now() - preloaderStart;
+        const wait = Math.max(PRELOADER_MIN_MS - elapsed, 0);
+        window.setTimeout(launchPreloader, wait);
+      };
+
+      if (preloaderLogo) {
+        preloaderLogo.addEventListener('error', () => {
+          preloaderLogo.classList.add('is-hidden');
+        });
+      }
+
+      window.addEventListener('load', () => {
+        window.setTimeout(finishPreloader, 200);
+      });
+
+      window.setTimeout(launchPreloader, PRELOADER_FAILSAFE_MS);
+
+      const navRoot = document.querySelector('nav');
+      const navToggle = document.querySelector('[data-mobile-nav-toggle]');
+      const navPanel = document.getElementById('mobile-nav-panel');
+      const navBackdrop = document.getElementById('mobile-nav-backdrop');
+
+      const updateNavHeight = () => {
+        if (!navRoot) return;
+        const height = navRoot.offsetHeight;
+        document.documentElement.style.setProperty('--nav-height', `${height}px`);
+      };
+      updateNavHeight();
+
+      const setMobileNavState = (open) => {
+        if (navToggle) {
+          navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          navToggle.classList.toggle('is-open', open);
+        }
+        if (navPanel) {
+          navPanel.classList.toggle('is-open', open);
+          navPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
+        }
+        if (navBackdrop) {
+          navBackdrop.classList.toggle('is-visible', open);
+          navBackdrop.setAttribute('aria-hidden', open ? 'false' : 'true');
+        }
+        document.body.classList.toggle('mobile-nav-open', !!open);
+      };
+
+      const closeMobileNav = () => setMobileNavState(false);
+
+      if (navToggle && navPanel) {
+        navToggle.addEventListener('click', () => {
+          const expanded = navToggle.getAttribute('aria-expanded') === 'true';
+          setMobileNavState(!expanded);
+        });
+      }
+
+      if (navBackdrop) {
+        navBackdrop.addEventListener('click', closeMobileNav);
+      }
+
+      const handleResize = () => {
+        updateNavHeight();
+        if (window.innerWidth >= 768) {
+          closeMobileNav();
+        }
+      };
+
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('orientationchange', handleResize);
+      window.addEventListener('load', updateNavHeight);
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeMobileNav();
+        }
+      });
+
+      const applyPageEnter = () => {
+        const main = document.querySelector('main');
+        if (!main) return;
+        const direction = sessionStorage.getItem('page-transition-direction');
+        sessionStorage.removeItem('page-transition-direction');
+        const enterClass =
+          direction === 'left'
+            ? 'page-enter-left'
+            : direction === 'right'
+            ? 'page-enter-right'
+            : 'page-enter-neutral';
+        main.classList.add(enterClass);
+        main.addEventListener(
+          'animationend',
+          () => {
+            main.classList.remove('page-enter-left', 'page-enter-right', 'page-enter-neutral');
+          },
+          { once: true },
+        );
+      };
+
+      document.addEventListener('DOMContentLoaded', applyPageEnter);
+
+      const navLinks = Array.from(document.querySelectorAll('nav a[data-nav-index]'));
+      const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+      const resolveIndex = (link) => {
+        const value = link.getAttribute('data-nav-index');
+        return value !== null ? Number.parseInt(value, 10) : 0;
+      };
+      const currentIndex = navLinks.findIndex((link) => link.getAttribute('href') === currentPath);
+
+      navLinks.forEach((link) => {
+        link.addEventListener('click', (event) => {
+          closeMobileNav();
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+          }
+          if (link.target === '_blank') {
+            return;
+          }
+          const main = document.querySelector('main');
+          if (!main) {
+            return;
+          }
+          if (link.getAttribute('href') === window.location.pathname) {
+            return;
+          }
+          const targetIndex = resolveIndex(link);
+          if (currentIndex === -1 || Number.isNaN(targetIndex) || targetIndex === currentIndex) {
+            return;
+          }
+          event.preventDefault();
+          const direction = targetIndex < currentIndex ? 'left' : 'right';
+          sessionStorage.setItem('page-transition-direction', direction);
+          main.classList.add(direction === 'left' ? 'page-exit-left' : 'page-exit-right');
+          setTimeout(() => {
+            window.location.href = link.href;
+          }, 200);
+        });
+      });
+    </script>
   </body>
 </html>

@@ -6,12 +6,12 @@ Inbox Steward keeps your inbox tidy with a local-first workflow that classifies 
 
 ## Features
 
-- **Local LLM classification** – Prompts a local Ollama model and repairs JSON output automatically. Includes deterministic fallbacks when the model is unreachable.
+- **Local LLM classification** – Prompts a local Ollama model and repairs JSON output automatically. The prompt now ships the live mailbox folder tree and historical hints on every call so the model can create or reuse folders confidently. Includes deterministic fallbacks when the model is unreachable.
 - **Smart foldering** – Enforces the provided naming rules, remembers past overrides through lightweight folder hints, and creates folders on demand when confidence is high.
 - **Sticky lane handling** – Flags actionable email and files it once you archive the thread.
 - **Calendar automation** – Creates, updates, and cancels events with deterministic UIDs, conflict detection, and a persisted registry for follow-ups.
 - **PDF understanding** – Extracts PDF text to improve filing accuracy and duplicate detection.
-- **What-if mode & undo** – Preview bulk actions and maintain an undo token history.
+- **What-if planner & undo** – Preview bulk actions with lane, move-now status, and confidence directly in the UI, then run a full sort without leaving the dashboard. Undo tokens remain available for every batch.
 - **Home Assistant notifications** – Decision requests, conflict alerts, and daily digests are routed through your HA mobile app target.
 - **Gorgeous admin UI** – Tailwind-powered dashboard with live stats, calendar history, and one-click full sort sweeps.
 
@@ -40,8 +40,8 @@ Primary components:
 ## Getting started
 
 1. Copy `.env.example` to `.env` and fill in your mail + Home Assistant credentials.
-2. Review `docker-compose.yml` and update IMAP, Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI.
-3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8000}` by default.
+2. Review `docker-compose.yml` and update the mail (IMAP or Exchange), Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI. Set `MAIL_BACKEND` to `IMAP` (default) or `EXCHANGE`, then provide the corresponding credentials. For IMAP you can still tune `IMAP_ENCRYPTION` (`SSL`, `STARTTLS`, or `NONE`) and `IMAP_AUTH_TYPE` (`LOGIN` by default, or `XOAUTH2` if basic auth is blocked). For Exchange you can choose an app-only flow (`EXCHANGE_LOGIN_MODE=CLIENT`) or the new delegated device login (`EXCHANGE_LOGIN_MODE=DELEGATED`) for personal Outlook.com accounts.
+3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8003}` by default.
 4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see Continuous image builds).
 
 
@@ -50,13 +50,28 @@ Primary components:
 1. Open Portainer and create a new stack named **inbox-steward**.
 2. Paste the contents of [`docker-compose.yml`](docker-compose.yml) into the editor.
 3. In the Environment variables section add secrets for:
-   - `IMAP_USERNAME`
-   - `IMAP_PASSWORD`
+   - `MAIL_BACKEND` (`IMAP` or `EXCHANGE`)
+   - For IMAP backends: `IMAP_USERNAME`, `IMAP_PASSWORD`
+   - For Exchange backends: `EXCHANGE_CLIENT_ID`, `EXCHANGE_USER_ID`, and either:
+     - (Business / app-only) `EXCHANGE_TENANT_ID`, `EXCHANGE_CLIENT_SECRET`, optional `EXCHANGE_SCOPE`
+     - (Personal Outlook.com) `EXCHANGE_LOGIN_MODE=DELEGATED`, delegated `EXCHANGE_SCOPE` (for example `offline_access Mail.ReadWrite Mail.ReadWrite.Shared`), and a writable `EXCHANGE_TOKEN_CACHE` path (e.g. `/data/exchange/token.json`)
    - `HOME_ASSISTANT_TOKEN`
-4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8000 is already in use. Portainer will publish the UI on that port.
+   - (Optional, IMAP) `IMAP_ENCRYPTION` if your provider requires `STARTTLS` or an unencrypted connection.
+   - (Optional, IMAP) `IMAP_AUTH_TYPE` and `IMAP_OAUTH2_TOKEN` if your provider requires OAuth 2.0 app passwords/tokens.
+   - (Optional, Exchange) `EXCHANGE_SCOPE` to override the default Graph scopes for either mode.
+4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8003 is already in use. Portainer will publish the UI on that port.
 5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
 6. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
 7. (Optional) To use the prebuilt image, update the stack so the app service references `ghcr.io/djamirsam/inbox-steward:latest` instead of building locally. The GitHub Action below keeps that tag fresh after every merge.
+
+### Mail backend configuration
+
+- **IMAP (default)** – Works with providers that still offer IMAP+SMTP app passwords. Supply `IMAP_HOST`, `IMAP_PORT`, `IMAP_USERNAME`, and `IMAP_PASSWORD`. Tune `IMAP_ENCRYPTION`, `IMAP_AUTH_TYPE`, and (if needed) `IMAP_OAUTH2_TOKEN` for OAuth-enabled tenants.
+- **Exchange Online / Outlook.com (Graph)** – Use when Outlook/Office365 disables IMAP.
+  - For business or shared mailboxes where you can grant application permissions: set `MAIL_BACKEND=EXCHANGE`, leave `EXCHANGE_LOGIN_MODE=CLIENT`, and provide `EXCHANGE_TENANT_ID`, `EXCHANGE_CLIENT_ID`, `EXCHANGE_CLIENT_SECRET`, and `EXCHANGE_USER_ID`. The default scope `https://graph.microsoft.com/.default` requests the app-only permissions you consented to.
+  - For personal Outlook.com accounts with mandatory MFA: set `MAIL_BACKEND=EXCHANGE`, `EXCHANGE_LOGIN_MODE=DELEGATED`, supply `EXCHANGE_CLIENT_ID`, `EXCHANGE_USER_ID` (or leave blank to rely on the signed-in account), and choose delegated scopes such as `offline_access Mail.ReadWrite Mail.ReadWrite.Shared`. Set `EXCHANGE_TOKEN_CACHE` to a persistent path (default `/data/exchange/token.json`). After the container starts, open the Diagnostics tab and use the **Microsoft sign-in** card to complete the device login.
+
+The diagnostics tab now reports which backend is active and surfaces OAuth errors, token expiry, delegated token status, and folder discovery health for Exchange accounts alongside the existing IMAP tooling. When delegated login is enabled you can launch the Microsoft device code flow directly from that page and confirm which account is linked.
 
 ### Manual Docker CLI deployment
 
@@ -65,7 +80,7 @@ git clone https://github.com/DJAMIRSAM/Inbox-Steward.git
 cd Inbox-Steward
 cp .env.example .env
 # edit .env
-mkdir -p storage/pdfs
+mkdir -p storage/pdfs storage/exchange
 sudo docker compose up -d --build
 ```
 
@@ -76,12 +91,19 @@ sudo docker compose pull app
 sudo docker compose up -d
 ```
 
-The FastAPI docs live at `http://localhost:${INBOX_STEWARD_PORT:-8000}/docs`. The dashboard gives you:
+The FastAPI docs live at `http://localhost:${INBOX_STEWARD_PORT:-8003}/docs`. The dashboard gives you:
 
 - Pending automations count
 - Needs-decision queue (sticky lane items)
 - Recent calendar entries with location/notes
 - Conflict inspector and manual full-sort trigger
+
+### What-if planner
+
+- Visit `/what-if` to see the latest dry-run plan, including each message's lane, destination, flag status, and confidence.
+- Use **Refresh preview** to request a new plan without leaving the page.
+- When you're satisfied, hit **Run full sort** to apply the moves without getting bounced to a raw JSON response.
+- A toast confirms how many messages were filed, and the table updates automatically.
 
 ## Home Assistant notification setup
 
@@ -105,7 +127,7 @@ Every batch of actions is tagged with a deterministic session ID. Undo tokens ar
 
 ## Testing workflow
 
-Integrate with your mail provider by granting IMAP access. The assistant inspects `SEEN` messages, so mark something as read to trigger classification. Acceptance tests:
+Integrate with your mail provider by granting mailbox access (IMAP app password or Exchange Graph permissions). The assistant inspects recently read messages, so mark something as read to trigger classification. Acceptance tests:
 
 1. **Receipts** – Send a PDF receipt. It should land in `Finance/Receipts` within two minutes.
 2. **Newsletters** – Mark a newsletter as read. It should jump to `Newsletters` immediately.

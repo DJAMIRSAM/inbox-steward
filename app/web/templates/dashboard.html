@@ -1,75 +1,75 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-    <p class="text-sm text-slate-500">Pending automations</p>
-    <p class="text-4xl font-semibold text-slate-900">{{ stats.pending }}</p>
+  <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+    <p class="text-sm text-slate-500 dark:text-slate-400">Pending automations</p>
+    <p class="text-4xl font-semibold text-slate-900 dark:text-white">{{ stats.pending }}</p>
   </div>
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-    <p class="text-sm text-slate-500">Needs decision</p>
+  <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+    <p class="text-sm text-slate-500 dark:text-slate-400">Needs decision</p>
     <p class="text-4xl font-semibold text-amber-500">{{ stats.needs_decision }}</p>
   </div>
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-    <p class="text-sm text-slate-500">Active conflicts</p>
+  <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+    <p class="text-sm text-slate-500 dark:text-slate-400">Active conflicts</p>
     <p class="text-4xl font-semibold text-rose-500">{{ stats.conflicts|length }}</p>
   </div>
 </section>
 
 <section class="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-6">
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+  <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
     <div class="flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-slate-900">Recent calendar entries</h2>
-      <span class="text-sm text-slate-500">last five</span>
+      <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent calendar entries</h2>
+      <span class="text-sm text-slate-500 dark:text-slate-400">last five</span>
     </div>
     <div class="mt-4 space-y-4">
       {% for event in stats.recent_events %}
-      <article class="border border-slate-100 rounded-xl p-4 hover:border-indigo-200 transition">
+      <article class="border border-slate-100 dark:border-slate-800 rounded-xl p-4 hover:border-brand-200 dark:hover:border-brand-500/60 transition">
         <div class="flex items-center justify-between">
-          <h3 class="text-base font-semibold text-indigo-600">{{ event.title }}</h3>
-          <span class="text-xs px-2 py-1 rounded-full bg-indigo-50 text-indigo-600">{{ event.calendar }}</span>
+          <h3 class="text-base font-semibold text-brand-600 dark:text-brand-300">{{ event.title }}</h3>
+          <span class="text-xs px-2 py-1 rounded-full bg-brand-50 text-brand-600 dark:bg-brand-600/20 dark:text-brand-200">{{ event.calendar }}</span>
         </div>
-        <p class="text-sm text-slate-500 mt-2">{{ format_time(event.starts_at) }} → {{ format_time(event.ends_at) }}</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">{{ format_time(event.starts_at) }} → {{ format_time(event.ends_at) }}</p>
         {% if event.location %}
-        <p class="text-sm text-slate-400 mt-1">📍 {{ event.location }}</p>
+        <p class="text-sm text-slate-400 dark:text-slate-500 mt-1">📍 {{ event.location }}</p>
         {% endif %}
         {% if event.notes %}
-        <p class="text-sm text-slate-400 mt-1">📝 {{ event.notes }}</p>
+        <p class="text-sm text-slate-400 dark:text-slate-500 mt-1">📝 {{ event.notes }}</p>
         {% endif %}
       </article>
       {% else %}
-      <p class="text-sm text-slate-400">No events created yet.</p>
+      <p class="text-sm text-slate-400 dark:text-slate-500">No events created yet.</p>
       {% endfor %}
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+  <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
     <div class="flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-slate-900">Open conflicts</h2>
-      <span class="text-sm text-slate-500">auto detected</span>
+      <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Open conflicts</h2>
+      <span class="text-sm text-slate-500 dark:text-slate-400">auto detected</span>
     </div>
     <div class="mt-4 space-y-4">
       {% for conflict in stats.conflicts %}
-      <article class="border border-rose-100 rounded-xl p-4 bg-rose-50">
-        <p class="text-sm font-medium text-rose-600">{{ conflict.details.conflict.existing_title }}</p>
-        <p class="text-xs text-rose-500 mt-1">{{ conflict.details.conflict.existing_start }}</p>
-        <p class="text-xs text-rose-500 mt-1">Triggered by {{ conflict.details.payload.title }}</p>
+      <article class="border border-rose-200 dark:border-rose-900/60 rounded-xl p-4 bg-rose-50 dark:bg-rose-900/30">
+        <p class="text-sm font-medium text-rose-600 dark:text-rose-300">{{ conflict.details.conflict.existing_title }}</p>
+        <p class="text-xs text-rose-500 dark:text-rose-300/80 mt-1">{{ conflict.details.conflict.existing_start }}</p>
+        <p class="text-xs text-rose-500 dark:text-rose-300/80 mt-1">Triggered by {{ conflict.details.payload.title }}</p>
       </article>
       {% else %}
-      <p class="text-sm text-slate-400">No conflicts. You're in the clear!</p>
+      <p class="text-sm text-slate-400 dark:text-slate-500">No conflicts. You're in the clear!</p>
       {% endfor %}
     </div>
   </div>
 </section>
 
 <section class="mt-10">
-  <div class="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
-      <h2 class="text-lg font-semibold text-slate-900">Trigger a full sort sweep</h2>
-      <p class="text-sm text-slate-500">Runs the model across Inbox and Archive to tidy everything.</p>
+      <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Trigger a full sort sweep</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Runs the model across Inbox and Archive to tidy everything.</p>
     </div>
     <form method="post" action="/api/full-sort" class="flex items-center gap-3">
-      <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm">Full sort</button>
-      <a href="/what-if" class="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:border-indigo-200">Preview first</a>
+      <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl shadow-sm">Full sort</button>
+      <a href="/what-if" class="px-4 py-2 bg-white dark:bg-transparent border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl hover:border-brand-300 dark:hover:border-brand-500">Preview first</a>
     </form>
   </div>
 </section>

@@ -1,0 +1,433 @@
+<section
+  id="debug-root"
+  class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-8"
+>
+  <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Diagnostics</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">
+        Confirm Inbox Steward can reach your mailbox, Ollama model, and Home Assistant notification target.
+      </p>
+    </div>
+    <form method="post" class="flex items-center gap-3" data-debug-form>
+      <input type="hidden" name="action" value="run_audit" />
+      <button
+        type="submit"
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white shadow-sm"
+      >
+        <span>Run connectivity audit</span>
+      </button>
+    </form>
+  </div>
+
+  <div id="debug-flash">
+    {% if flash %}
+    {% if flash.status == 'success' %}
+    {% set flash_classes = 'border-green-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' %}
+    {% elif flash.status == 'error' %}
+    {% set flash_classes = 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/40 dark:text-rose-200' %}
+    {% else %}
+    {% set flash_classes = 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200' %}
+    {% endif %}
+    <div class="mt-6 px-4 py-3 rounded-xl border {{ flash_classes }}">
+      {{ flash.message }}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
+      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Service configuration</h2>
+      {% set mail = overview.mail %}
+      {% set mail_label = mail.backend + ' mailbox' %}
+      <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+        <div class="flex items-center justify-between gap-3">
+          <dt class="font-medium">{{ mail_label }}</dt>
+          <dd class="text-right">
+            <div class="flex items-center justify-end gap-2">
+              <span>
+                {{ mail.host }}{% if mail.mailbox %} &middot; {{ mail.mailbox }}{% endif %}
+              </span>
+              {% if mail.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">
+              {{ mail.username or '—' }}{% if mail.auth %} &middot; {{ mail.auth }}{% endif %}{% if mail.login_mode %} &middot; {{ mail.login_mode|title }} mode{% endif %} &middot; poll {{ mail.poll }}s
+            </div>
+            {% if mail.account %}
+            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Signed in as {{ mail.account }}</div>
+            {% endif %}
+          </dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="font-medium">Ollama</dt>
+          <dd class="text-right">
+            <div class="flex items-center justify-end gap-2">
+              <span>{{ overview.ollama.endpoint }}</span>
+              {% if overview.ollama.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Model: {{ overview.ollama.model }}</div>
+          </dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="font-medium">Home Assistant</dt>
+          <dd class="text-right">
+            <div class="flex items-center justify-end gap-2">
+              <span>{{ overview.home_assistant.base_url or '—' }}</span>
+              {% if overview.home_assistant.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Target: {{ overview.home_assistant.target or '—' }}</div>
+          </dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="font-medium">Database</dt>
+          <dd class="text-right">
+            <div class="flex items-center justify-end gap-2">
+              <span class="truncate max-w-[220px]" title="{{ overview.database.url }}">{{ overview.database.url }}</span>
+              {% if overview.database.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
+          </dd>
+        </div>
+      </dl>
+    </div>
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
+      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Last audit snapshot</h2>
+      {% set audit = results.audit %}
+      {% if audit %}
+      <ul class="mt-4 space-y-2 text-sm">
+        {% set audit_labels = {'mail': mail.backend ~ ' connection', 'folders': 'Folder tree', 'ollama': 'Ollama API', 'home_assistant': 'Home Assistant'} %}
+        {% for key, label in audit_labels.items() %}
+        {% set ok = audit.get(key) %}
+        <li class="flex items-center justify-between gap-3">
+          <span class="text-slate-600 dark:text-slate-300">{{ label }}</span>
+          {% if ok %}
+          <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">
+            <span>●</span>
+            Passing
+          </span>
+          {% else %}
+          <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">
+            <span>●</span>
+            Attention needed
+          </span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">Run a new audit anytime to refresh these results.</p>
+      {% else %}
+      <p class="mt-4 text-sm text-slate-500 dark:text-slate-300">
+        No audit has been run yet. Use the button above to execute all connectivity checks at once.
+      </p>
+      {% endif %}
+    </div>
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
+      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Environment snapshot</h2>
+      {% set env = environment %}
+      <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+        <div>
+          <dt class="font-medium flex items-center justify-between gap-3">
+            <span>{{ env.mail.backend }} mailbox</span>
+            {% if env.mail.configured %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Loaded</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200">Partial</span>
+            {% endif %}
+          </dt>
+          <dd class="mt-2 space-y-1">
+            {% if env.mail.backend == 'Exchange' %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Identity</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.identity or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Mode</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.login_mode }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Tenant</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.tenant or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Client ID</div>
+            <div class="font-mono text-xs">{{ env.mail.client_id }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Scopes</div>
+            <div class="font-mono text-xs break-words">{{ env.mail.scopes }}</div>
+            {% if env.mail.account %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Account</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.account }}</div>
+            {% endif %}
+            {% if env.mail.token_cache %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Token cache</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.token_cache }}</div>
+            {% endif %}
+            {% else %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Host</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.host }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Mailbox</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.mailbox }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Username</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.username }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Auth</div>
+            <div class="font-mono text-xs break-words">{{ env.mail.auth }}</div>
+            {% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt class="font-medium flex items-center justify-between gap-3">
+            <span>Home Assistant</span>
+            {% if env.home_assistant.configured %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Loaded</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200">Partial</span>
+            {% endif %}
+          </dt>
+          <dd class="mt-2 space-y-1">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Base URL</div>
+            <div class="font-mono text-xs break-all">{{ env.home_assistant.base_url or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Notify target</div>
+            <div class="font-mono text-xs break-all">{{ env.home_assistant.target or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Token</div>
+            <div class="font-mono text-xs">{{ env.home_assistant.token }}</div>
+          </dd>
+        </div>
+        <div>
+          <dt class="font-medium">Ollama</dt>
+          <dd class="mt-2 space-y-1">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Endpoint</div>
+            <div class="font-mono text-xs break-all">{{ env.ollama.endpoint }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Model</div>
+            <div class="font-mono text-xs break-words">{{ env.ollama.model }}</div>
+          </dd>
+        </div>
+      </dl>
+      <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">Tokens are truncated for safety. Update the `.env` file or container environment to change these values.</p>
+    </div>
+  </div>
+
+  <div class="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">{{ mail.backend }} mailbox</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Pulls the newest message and shows a quick preview.</p>
+      </div>
+      <form method="post" class="mt-auto" data-debug-form>
+        <input type="hidden" name="action" value="test_email" />
+        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Fetch latest message</button>
+      </form>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+        {% set email = results.email %}
+        {% if email is none %}
+        <p class="text-slate-400 dark:text-slate-500">No test run yet.</p>
+        {% elif email.ok %}
+        <dl class="space-y-2">
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Subject</dt>
+            <dd class="font-medium text-slate-800 dark:text-slate-100">{{ email.message.subject or '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">From</dt>
+            <dd>{{ email.message.sender or '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Received</dt>
+            <dd>{{ email.message.received_at or '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Folder</dt>
+            <dd>{{ email.message.folder or '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Preview</dt>
+            <dd class="text-slate-700 dark:text-slate-200">{{ email.message.snippet or '—' }}</dd>
+          </div>
+        </dl>
+        {% else %}
+        <p class="text-rose-600 dark:text-rose-300">{{ email.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Mailbox folders</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Lists every {{ mail.backend }} folder the assistant can see.</p>
+      </div>
+      <form method="post" class="mt-auto" data-debug-form>
+        <input type="hidden" name="action" value="list_folders" />
+        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Refresh folder tree</button>
+      </form>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 max-h-64 overflow-y-auto">
+        {% set folder_result = results.folders %}
+        {% if folder_result is none %}
+        <p class="text-slate-400 dark:text-slate-500">No folder check yet.</p>
+        {% elif folder_result.ok %}
+        <ul class="space-y-1 font-mono text-xs">
+          {% for folder in folder_result.folders %}
+          <li class="text-slate-700 dark:text-slate-200">{{ folder }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-rose-600 dark:text-rose-300">{{ folder_result.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">{{ mail.backend }} session health</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Inspect the authenticated session, mailbox counters, and server capabilities.</p>
+      </div>
+      <div class="mt-auto flex flex-col sm:flex-row gap-3">
+        <form method="post" class="flex-1" data-debug-form>
+          <input type="hidden" name="action" value="imap_diagnostics" />
+          <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Inspect session</button>
+        </form>
+        <form method="post" class="flex-1" data-debug-form>
+          <input type="hidden" name="action" value="reset_imap" />
+          <button type="submit" class="w-full px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 rounded-lg shadow-sm">Reset connection</button>
+        </form>
+      </div>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-3">
+        {% set mail_diag = results.mail %}
+        {% if mail_diag is none %}
+        <p class="text-slate-400 dark:text-slate-500">Run diagnostics to view live {{ mail.backend }} session details.</p>
+        {% elif mail_diag.reset %}
+        <p class="text-slate-500 dark:text-slate-300">Connection reset. Inspect the session to confirm a fresh login succeeds.</p>
+        {% elif mail_diag.ok %}
+        <dl class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Server</dt>
+            <dd class="font-medium text-slate-700 dark:text-slate-100">{{ mail_diag.server }}{% if mail_diag.encryption %} · {{ mail_diag.encryption }}{% endif %}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Authentication</dt>
+            <dd>{{ mail_diag.auth_type }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">State</dt>
+            <dd>{{ mail_diag.state }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Selected folder</dt>
+            <dd>{{ mail_diag.selected_folder or '—' }}</dd>
+          </div>
+          {% if mail_diag.mailbox_status %}
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Mailbox counters</dt>
+            <dd class="mt-1 grid grid-cols-3 gap-2 text-xs">
+              {% for key, value in mail_diag.mailbox_status.items() %}
+              <span class="rounded-md bg-slate-200/60 dark:bg-slate-800/60 px-2 py-1 text-center">{{ key }}: {{ value }}</span>
+              {% endfor %}
+            </dd>
+          </div>
+          {% endif %}
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Capabilities</dt>
+            {% if mail_diag.capabilities %}
+            <dd class="mt-1 flex flex-wrap gap-1 text-xs">
+              {% for cap in mail_diag.capabilities %}
+              <span class="px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800/70">{{ cap }}</span>
+              {% endfor %}
+            </dd>
+            {% elif mail_diag.capabilities_error %}
+            <dd class="text-rose-600 dark:text-rose-300">{{ mail_diag.capabilities_error }}</dd>
+            {% else %}
+            <dd>Unavailable</dd>
+            {% endif %}
+          </div>
+        </dl>
+        {% else %}
+        <div class="space-y-2">
+          <p class="text-rose-600 dark:text-rose-300">{{ mail_diag.error }}</p>
+          {% if mail_diag.mailbox_error %}
+          <p class="text-xs text-slate-500 dark:text-slate-400">Mailbox error: {{ mail_diag.mailbox_error }}</p>
+          {% endif %}
+          {% if mail_diag.capabilities_error %}
+          <p class="text-xs text-slate-500 dark:text-slate-400">Capabilities error: {{ mail_diag.capabilities_error }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+    {% if settings.mail_backend == 'EXCHANGE' and settings.exchange_login_mode == 'DELEGATED' %}
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Microsoft sign-in</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Authorize the Exchange mailbox using Microsoft's device login flow.</p>
+      </div>
+      <form method="post" class="mt-auto" data-debug-form>
+        <input type="hidden" name="action" value="exchange_sign_in" />
+        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Authorize mailbox</button>
+      </form>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-2">
+        {% set ms = results.exchange_auth %}
+        {% if ms is none %}
+        <p class="text-slate-400 dark:text-slate-500">Launch the device login flow to link your Microsoft account.</p>
+        {% elif ms.ok %}
+        <p class="text-slate-700 dark:text-slate-200">Delegated tokens cached successfully.</p>
+        {% if ms.account %}
+        <p class="text-xs text-slate-500 dark:text-slate-400">Signed in as <span class="font-mono">{{ ms.account }}</span>.</p>
+        {% endif %}
+        {% else %}
+        <p class="text-rose-600 dark:text-rose-300">{{ ms.error }}</p>
+        {% if ms.verification_uri and ms.user_code %}
+        <p class="text-xs text-slate-500 dark:text-slate-400">Visit <span class="font-mono">{{ ms.verification_uri }}</span> and enter code <span class="font-mono">{{ ms.user_code }}</span>.</p>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Ollama model</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Sends a friendly hello and shows the model response.</p>
+      </div>
+      <form method="post" class="mt-auto" data-debug-form>
+        <input type="hidden" name="action" value="test_ollama" />
+        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Ping Ollama</button>
+      </form>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+        {% set ollama = results.ollama %}
+        {% if ollama is none %}
+        <p class="text-slate-400 dark:text-slate-500">No test run yet.</p>
+        {% elif ollama.ok %}
+        <p class="text-slate-700 dark:text-slate-200">{{ ollama.response }}</p>
+        {% else %}
+        <p class="text-rose-600 dark:text-rose-300">{{ ollama.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Home Assistant</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Pushes a one-off test notification to your configured mobile target.</p>
+      </div>
+      <form method="post" class="mt-auto" data-debug-form>
+        <input type="hidden" name="action" value="test_home_assistant" />
+        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Send test notification</button>
+      </form>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
+        {% set ha = results.home_assistant %}
+        {% if ha is none %}
+        <p class="text-slate-400 dark:text-slate-500">No test run yet.</p>
+        {% elif ha.ok %}
+        <p class="text-slate-700 dark:text-slate-200">Notification request accepted (HTTP {{ ha.status }}).</p>
+        {% else %}
+        <p class="text-rose-600 dark:text-rose-300">{{ ha.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>

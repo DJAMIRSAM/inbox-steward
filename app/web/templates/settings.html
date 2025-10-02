@@ -1,36 +1,48 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-  <h1 class="text-2xl font-semibold text-slate-900">Runtime configuration</h1>
-  <p class="text-sm text-slate-500 mt-2">Most values come from environment variables. Update your docker compose to change them.</p>
+<section class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-8">
+  <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Runtime configuration</h1>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Most values come from environment variables. Update your docker compose to change them.</p>
 
   <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
     <div>
-      <h2 class="text-sm font-medium text-slate-600 uppercase tracking-wide">IMAP</h2>
-      <ul class="mt-3 space-y-2 text-slate-500">
-        <li><span class="font-semibold text-slate-700">Host:</span> {{ settings.imap_host }}</li>
-        <li><span class="font-semibold text-slate-700">Mailbox:</span> {{ settings.imap_mailbox }}</li>
-        <li><span class="font-semibold text-slate-700">Poll interval:</span> {{ settings.poll_interval_seconds }} seconds</li>
+      <h2 class="text-sm font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wide">{{ settings.mail_backend }} mailbox</h2>
+      <ul class="mt-3 space-y-2 text-slate-500 dark:text-slate-400">
+        {% if settings.mail_backend == 'EXCHANGE' %}
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Identity:</span> {{ settings.exchange_user_id or settings.imap_username }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Mode:</span> {{ settings.exchange_login_mode|title }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Tenant:</span> {{ settings.exchange_tenant_id or '—' }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Client ID:</span> {{ settings.exchange_client_id or '—' }}</li>
+        {% if exchange_account %}
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Signed in as:</span> {{ exchange_account }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Token cache:</span> {{ settings.exchange_token_cache }}</li>
+        {% endif %}
+        {% else %}
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Host:</span> {{ settings.imap_host }}:{{ settings.imap_port }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Mailbox:</span> {{ settings.imap_mailbox }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Auth:</span> {{ settings.imap_auth_type }}</li>
+        {% endif %}
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Poll interval:</span> {{ settings.poll_interval_seconds }} seconds</li>
       </ul>
     </div>
     <div>
-      <h2 class="text-sm font-medium text-slate-600 uppercase tracking-wide">Home Assistant</h2>
-      <ul class="mt-3 space-y-2 text-slate-500">
-        <li><span class="font-semibold text-slate-700">Base URL:</span> {{ settings.ha_base_url or "not configured" }}</li>
-        <li><span class="font-semibold text-slate-700">Target:</span> {{ settings.ha_mobile_target or "not configured" }}</li>
+      <h2 class="text-sm font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wide">Home Assistant</h2>
+      <ul class="mt-3 space-y-2 text-slate-500 dark:text-slate-400">
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Base URL:</span> {{ settings.ha_base_url or "not configured" }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Target:</span> {{ settings.ha_mobile_target or "not configured" }}</li>
       </ul>
     </div>
     <div>
-      <h2 class="text-sm font-medium text-slate-600 uppercase tracking-wide">Model</h2>
-      <ul class="mt-3 space-y-2 text-slate-500">
-        <li><span class="font-semibold text-slate-700">Endpoint:</span> {{ settings.ollama_endpoint }}</li>
-        <li><span class="font-semibold text-slate-700">Model:</span> {{ settings.ollama_model }}</li>
+      <h2 class="text-sm font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wide">Model</h2>
+      <ul class="mt-3 space-y-2 text-slate-500 dark:text-slate-400">
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Endpoint:</span> {{ settings.ollama_endpoint }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Model:</span> {{ settings.ollama_model }}</li>
       </ul>
     </div>
     <div>
-      <h2 class="text-sm font-medium text-slate-600 uppercase tracking-wide">Database</h2>
-      <ul class="mt-3 space-y-2 text-slate-500">
-        <li><span class="font-semibold text-slate-700">URL:</span> {{ settings.database_url }}</li>
+      <h2 class="text-sm font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wide">Database</h2>
+      <ul class="mt-3 space-y-2 text-slate-500 dark:text-slate-400">
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">URL:</span> {{ settings.database_url }}</li>
       </ul>
     </div>
   </div>

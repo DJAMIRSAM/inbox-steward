@@ -11,10 +11,28 @@ logger = logging.getLogger(__name__)
 
 
 class HomeAssistantNotifier:
+    def _resolve_service_path(self, target: str | None) -> str | None:
+        if not target:
+            return None
+        cleaned = target.strip().lstrip('/')
+        if not cleaned:
+            return None
+        if '/' in cleaned:
+            parts = [part for part in cleaned.split('/') if part]
+            if len(parts) >= 2:
+                domain, service = parts[0], parts[-1]
+                return f"{domain}/{service}"
+        domain, _, service = cleaned.partition('.')
+        if not service:
+            service = domain
+            domain = 'notify'
+        return f"{domain}/{service}"
+
     def __init__(self) -> None:
-        self.base_url = settings.ha_base_url
-        self.token = settings.ha_token
-        self.mobile_target = settings.ha_mobile_target
+        self.base_url = (settings.ha_base_url or "").rstrip("/") or None
+        self.token = (settings.ha_token or "").strip() or None
+        self.mobile_target = (settings.ha_mobile_target or "").strip() or None
+        self._service = self._resolve_service_path(self.mobile_target)
         self._client = httpx.AsyncClient(timeout=30)
 
     async def send_decision_request(
@@ -60,11 +78,71 @@ class HomeAssistantNotifier:
             data["data"]["url"] = f"/api/undo/{undo_token}"
         await self._send("Review digest", data)
 
-    async def _send(self, event: str, payload: dict) -> None:
+    async def send_test_notification(self) -> dict[str, str | int | bool]:
+        if not self._enabled:
+            return {
+                "ok": False,
+                "error": self._missing_credentials_message(),
+            }
+        if not self._service:
+            return {
+                "ok": False,
+                "error": self._missing_credentials_message(),
+            }
+        payload = {
+            "title": "Inbox Steward connectivity test",
+            "message": "This is a debug notification from Inbox Steward.",
+            "data": {"tag": "inbox-steward-debug"},
+        }
         try:
             response = await self._client.post(
-                f"{self.base_url}/api/services/notify/{self.mobile_target}",
+                f"{self.base_url}/api/services/{self._service}",
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            return {"ok": True, "status": response.status_code}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Home Assistant test notification failed")
+            return {
+                "ok": False,
+                "error": f"{exc} (target: {self.mobile_target}, base: {self.base_url})",
+            }
+
+    async def check_status(self) -> dict[str, str | int | bool]:
+        if not self._enabled:
+            return {
+                "ok": False,
+                "error": self._missing_credentials_message(),
+            }
+        try:
+            response = await self._client.get(
+                f"{self.base_url}/api/",
                 headers={"Authorization": f"Bearer {self.token}"},
+            )
+            response.raise_for_status()
+            return {"ok": True, "status": response.status_code}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Home Assistant status check failed")
+            return {
+                "ok": False,
+                "error": f"{exc} (base: {self.base_url})",
+            }
+
+    async def _send(self, event: str, payload: dict) -> None:
+        if not self._service:
+            logger.error('Home Assistant service path is not configured')
+            return
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/api/services/{self._service}",
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Content-Type": "application/json",
+                },
                 json=payload,
             )
             response.raise_for_status()
@@ -73,7 +151,18 @@ class HomeAssistantNotifier:
 
     @property
     def _enabled(self) -> bool:
-        return bool(self.base_url and self.token and self.mobile_target)
+        return bool(self.base_url and self.token and self._service)
+
+    def _missing_credentials_message(self) -> str:
+        missing = []
+        if not self.base_url:
+            missing.append("HOME_ASSISTANT_BASE_URL")
+        if not self.token:
+            missing.append("HOME_ASSISTANT_TOKEN")
+        if not self.mobile_target:
+            missing.append("HOME_ASSISTANT_MOBILE_TARGET")
+        joined = ", ".join(missing) if missing else "required Home Assistant settings"
+        return f"Missing {joined}."
 
 
 notifier = HomeAssistantNotifier()

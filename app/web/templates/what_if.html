@@ -1,49 +1,85 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+<section class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-8">
   <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-semibold text-slate-900">What if mode</h1>
-      <p class="text-sm text-slate-500 mt-2">Dry-run of planned moves with their confidence levels. Approve before executing.</p>
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">What-if planner</h1>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">Preview the lane, destination, and confidence for every pending message before applying the moves.</p>
     </div>
-    <form method="post" action="/api/full-sort">
-      <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm">Run full sort</button>
-    </form>
+    <div class="flex gap-3">
+      <a href="/what-if" class="px-4 py-2 bg-white dark:bg-transparent border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-500 text-slate-700 dark:text-slate-200 rounded-xl shadow-sm">Refresh preview</a>
+      <form method="post" action="/what-if/full-sort">
+        <button type="submit" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl shadow-sm">Run full sort</button>
+      </form>
+    </div>
   </div>
 
+  {% if flash %}
+  {% if flash.status == 'success' %}
+  {% set flash_classes = 'border-green-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/30 dark:text-emerald-200' %}
+  {% else %}
+  {% set flash_classes = 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200' %}
+  {% endif %}
+  <div class="mt-6 px-4 py-3 rounded-xl border {{ flash_classes }}">
+    {{ flash.message }}
+  </div>
+  {% endif %}
+
   <div class="mt-6">
-    <div class="flex items-center justify-between text-sm text-slate-500">
+    <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
       <span>{{ plan.count }} planned moves</span>
       <span>Confidence is model reported. Anything under 0.4 will pause for you.</span>
     </div>
-    <div class="mt-4 overflow-hidden border border-slate-200 rounded-xl">
-      <table class="min-w-full divide-y divide-slate-200">
-        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+    <div class="mt-4 overflow-hidden border border-slate-200 dark:border-slate-800 rounded-xl">
+      <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+        <thead class="bg-slate-50 dark:bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
           <tr>
             <th class="px-4 py-3 text-left">UID</th>
             <th class="px-4 py-3 text-left">Subject</th>
+            <th class="px-4 py-3 text-left">Lane</th>
             <th class="px-4 py-3 text-left">Destination</th>
+            <th class="px-4 py-3 text-left">Action</th>
             <th class="px-4 py-3 text-left">Confidence</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-100 text-sm">
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
           {% for item in plan.plan %}
-          <tr class="hover:bg-indigo-50">
-            <td class="px-4 py-3 font-mono text-xs">{{ item.uid }}</td>
-            <td class="px-4 py-3 text-slate-700">{{ item.subject }}</td>
-            <td class="px-4 py-3 text-indigo-600">{{ item.destination }}</td>
+          <tr class="hover:bg-brand-50 dark:hover:bg-brand-500/10">
+            <td class="px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-400">{{ item.uid }}</td>
+            <td class="px-4 py-3 text-slate-700 dark:text-slate-200">{{ item.subject }}</td>
+            <td class="px-4 py-3">
+              {% set lane = item.lane %}
+              {% if lane == 'quick' %}
+              {% set lane_classes = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200' %}
+              {% elif lane == 'sticky' %}
+              {% set lane_classes = 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200' %}
+              {% else %}
+              {% set lane_classes = 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200' %}
+              {% endif %}
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ lane_classes }}">{{ lane|capitalize }}</span>
+            </td>
+            <td class="px-4 py-3 text-brand-600 dark:text-brand-300">{{ item.destination }}</td>
+            <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
+              {% if item.move_now %}
+              <span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Move immediately</span>
+              {% elif item.flag %}
+              <span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Stay flagged until archived</span>
+              {% else %}
+              <span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-slate-400"></span>Awaiting action</span>
+              {% endif %}
+            </td>
             <td class="px-4 py-3">
               <span class="inline-flex items-center gap-2">
-                <span class="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <span class="block h-2 bg-indigo-500" style="width: {{ (item.confidence or 0) * 100 }}%"></span>
+                <span class="w-24 h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <span class="block h-2 bg-brand-500" style="width: {{ (item.confidence or 0) * 100 }}%"></span>
                 </span>
-                <span class="text-xs text-slate-500">{{ '%.0f' | format((item.confidence or 0) * 100) }}%</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400">{{ '%.0f' | format((item.confidence or 0) * 100) }}%</span>
               </span>
             </td>
           </tr>
           {% else %}
           <tr>
-            <td colspan="4" class="px-4 py-6 text-center text-slate-400">No pending moves. Inbox is in harmony.</td>
+            <td colspan="4" class="px-4 py-6 text-center text-slate-400 dark:text-slate-500">No pending moves. Inbox is in harmony.</td>
           </tr>
           {% endfor %}
         </tbody>
