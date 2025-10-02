@@ -58,7 +58,6 @@ Primary components:
 6. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
 7. (Optional) To use the prebuilt image, update the stack so the app service references `ghcr.io/djamirsam/inbox-steward:latest` instead of building locally. The GitHub Action below keeps that tag fresh after every merge.
 
-
 ### Manual Docker CLI deployment
 
 ```bash
