@@ -74,9 +74,15 @@
         <p class="preloader-text">Warming up your Inbox Steward…</p>
       </div>
     </div>
-    <nav class="relative bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 backdrop-blur z-40">
+    <nav class="relative bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 z-40">
       <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <div class="text-2xl font-semibold text-brand-600 dark:text-brand-400">{{ settings.app_name }}</div>
+        <a
+          href="/"
+          class="text-2xl font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-500/60 rounded"
+          aria-label="Go to home"
+        >
+          {{ settings.app_name }}
+        </a>
         <div class="flex items-center gap-3">
           <div class="hidden md:flex items-center gap-4 text-sm font-medium text-slate-600 dark:text-slate-300">
             <a href="/" data-nav-index="0" class="hover:text-brand-600 dark:hover:text-brand-400">Dashboard</a>
