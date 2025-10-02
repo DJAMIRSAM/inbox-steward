@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     imap_port: int = Field(993, env="IMAP_PORT")
     imap_username: str = Field(..., env="IMAP_USERNAME")
     imap_password: str = Field(..., env="IMAP_PASSWORD")
-    imap_use_ssl: bool = Field(True, env="IMAP_USE_SSL")
+    imap_encryption: str = Field(
+        "SSL",
+        validation_alias=AliasChoices("IMAP_ENCRYPTION", "IMAP_SECURITY", "IMAP_USE_SSL"),
+        description="IMAP transport security mode: SSL, STARTTLS, or NONE",
+    )
     imap_mailbox: str = Field("INBOX", env="IMAP_MAILBOX")
 
     timezone: str = Field("America/Vancouver", env="TIMEZONE")
@@ -77,6 +81,28 @@ class Settings(BaseSettings):
     @validator("pdf_temp_dir", pre=True)
     def _coerce_pdf_path(cls, value: str | Path) -> Path:
         return Path(value)
+
+    @validator("imap_encryption", pre=True)
+    def _normalize_imap_encryption(cls, value: str | bool | None) -> str:
+        if value in (None, ""):
+            return "SSL"
+        if isinstance(value, bool):
+            return "SSL" if value else "NONE"
+
+        text = str(value).strip()
+        if not text:
+            return "SSL"
+
+        normalized = text.replace("-", "").replace("_", "").upper()
+
+        if normalized in {"SSL", "TLS", "TRUE", "1", "ON", "YES"}:
+            return "SSL"
+        if normalized in {"STARTTLS"}:
+            return "STARTTLS"
+        if normalized in {"NONE", "NOENCRYPTION", "PLAIN", "UNENCRYPTED", "FALSE", "0", "OFF"}:
+            return "NONE"
+
+        raise ValueError("IMAP_ENCRYPTION must be one of: SSL, STARTTLS, NONE")
 
 
 @lru_cache()

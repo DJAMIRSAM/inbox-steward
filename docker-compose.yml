@@ -11,6 +11,7 @@ services:
       DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg2://inbox_steward:inbox_steward@db:5432/inbox_steward}"
       IMAP_HOST: "${IMAP_HOST:-outlook.office365.com}"
       IMAP_PORT: "${IMAP_PORT:-993}"
+      IMAP_ENCRYPTION: "${IMAP_ENCRYPTION:-SSL}"
       IMAP_USERNAME: "${IMAP_USERNAME:-example@outlook.com}"
       IMAP_PASSWORD: "${IMAP_PASSWORD:-getanapppassword}"
       IMAP_MAILBOX: "${IMAP_MAILBOX:-INBOX}"

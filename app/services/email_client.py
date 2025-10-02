@@ -27,12 +27,29 @@ class EmailClient:
 
     def connect(self) -> IMAPClient:
         if self._client is None:
-            logger.info("Connecting to IMAP %s", settings.imap_host)
+            logger.info(
+                "Connecting to IMAP %s using %s", settings.imap_host, settings.imap_encryption
+            )
+            use_ssl = settings.imap_encryption == "SSL"
             client = IMAPClient(
                 settings.imap_host,
                 port=settings.imap_port,
-                ssl=settings.imap_use_ssl,
+                ssl=use_ssl,
             )
+            if settings.imap_encryption == "STARTTLS":
+                try:
+                    client.starttls()
+                except Exception:  # noqa: BLE001
+                    logger.exception("IMAP STARTTLS negotiation failed")
+                    try:
+                        client.shutdown()
+                    except Exception:  # noqa: BLE001
+                        logger.debug(
+                            "IMAP client shutdown after STARTTLS failure raised but was ignored",
+                            exc_info=True,
+                        )
+                    self._client = None
+                    raise
             try:
                 client.login(settings.imap_username, settings.imap_password)
             except Exception:  # noqa: BLE001
@@ -163,7 +180,8 @@ class EmailClient:
             "state": state_name,
             "selected_folder": selected_folder,
             "server": f"{settings.imap_host}:{settings.imap_port}",
-            "ssl": settings.imap_use_ssl,
+            "encryption": settings.imap_encryption,
+            "ssl": settings.imap_encryption == "SSL",
             "mailbox": settings.imap_mailbox,
             "mailbox_status": mailbox_status,
             "mailbox_error": mailbox_error,

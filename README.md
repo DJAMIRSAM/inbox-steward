@@ -40,7 +40,7 @@ Primary components:
 ## Getting started
 
 1. Copy `.env.example` to `.env` and fill in your mail + Home Assistant credentials.
-2. Review `docker-compose.yml` and update IMAP, Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI.
+2. Review `docker-compose.yml` and update IMAP, Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI. Set `IMAP_ENCRYPTION` to `SSL`, `STARTTLS`, or `NONE` to match your provider (defaults to `SSL`).
 3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8003}` by default.
 4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see Continuous image builds).
 
@@ -53,6 +53,7 @@ Primary components:
    - `IMAP_USERNAME`
    - `IMAP_PASSWORD`
    - `HOME_ASSISTANT_TOKEN`
+   - (Optional) `IMAP_ENCRYPTION` if your provider requires `STARTTLS` or an unencrypted connection.
 4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8003 is already in use. Portainer will publish the UI on that port.
 5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
 6. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
