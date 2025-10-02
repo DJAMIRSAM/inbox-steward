@@ -190,8 +190,16 @@
 
       const preloader = document.getElementById('preloader');
       const preloaderLogo = document.querySelector('[data-preloader-logo]');
+      const PRELOADER_MIN_MS = 900;
+      const PRELOADER_FAILSAFE_MS = 7000;
+      const preloaderStart = performance.now();
+      let preloaderLaunchStarted = false;
 
-      const finishPreloader = () => {
+      if (!preloader) {
+        document.body.classList.remove('preloader-active');
+      }
+
+      const removePreloader = () => {
         if (!preloader || preloader.classList.contains('is-hidden')) {
           document.body.classList.remove('preloader-active');
           return;
@@ -202,7 +210,27 @@
           if (preloader && preloader.parentElement) {
             preloader.parentElement.removeChild(preloader);
           }
-        }, 600);
+        }, 900);
+      };
+
+      const launchPreloader = () => {
+        if (!preloader || preloaderLaunchStarted) {
+          document.body.classList.remove('preloader-active');
+          return;
+        }
+        preloaderLaunchStarted = true;
+        preloader.classList.add('is-launching');
+        document.body.classList.remove('preloader-active');
+        window.setTimeout(removePreloader, 820);
+      };
+
+      const finishPreloader = () => {
+        if (!preloader || preloaderLaunchStarted) {
+          return;
+        }
+        const elapsed = performance.now() - preloaderStart;
+        const wait = Math.max(PRELOADER_MIN_MS - elapsed, 0);
+        window.setTimeout(launchPreloader, wait);
       };
 
       if (preloaderLogo) {
@@ -215,11 +243,19 @@
         window.setTimeout(finishPreloader, 200);
       });
 
-      window.setTimeout(finishPreloader, 5000);
+      window.setTimeout(launchPreloader, PRELOADER_FAILSAFE_MS);
 
+      const navRoot = document.querySelector('nav');
       const navToggle = document.querySelector('[data-mobile-nav-toggle]');
       const navPanel = document.getElementById('mobile-nav-panel');
       const navBackdrop = document.getElementById('mobile-nav-backdrop');
+
+      const updateNavHeight = () => {
+        if (!navRoot) return;
+        const height = navRoot.offsetHeight;
+        document.documentElement.style.setProperty('--nav-height', `${height}px`);
+      };
+      updateNavHeight();
 
       const setMobileNavState = (open) => {
         if (navToggle) {
@@ -250,11 +286,16 @@
         navBackdrop.addEventListener('click', closeMobileNav);
       }
 
-      window.addEventListener('resize', () => {
+      const handleResize = () => {
+        updateNavHeight();
         if (window.innerWidth >= 768) {
           closeMobileNav();
         }
-      });
+      };
+
+      window.addEventListener('resize', handleResize);
+      window.addEventListener('orientationchange', handleResize);
+      window.addEventListener('load', updateNavHeight);
 
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
