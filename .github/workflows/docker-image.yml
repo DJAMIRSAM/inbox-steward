@@ -2,14 +2,12 @@ name: Build Docker image
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
     types: [opened, synchronize, reopened]
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ toLower(github.repository) }}
 
 jobs:
   build:
@@ -36,6 +34,11 @@ jobs:
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
+      # Lowercase the repo name (OWNER/REPO -> owner/repo)
+      - name: Compute lowercase image name
+        id: img
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@v3
@@ -49,5 +52,5 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}:${{ steps.vars.outputs.tag }}
           provenance: false
