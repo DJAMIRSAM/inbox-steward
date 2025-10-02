@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 class HomeAssistantNotifier:
     def __init__(self) -> None:
-        self.base_url = settings.ha_base_url
-        self.token = settings.ha_token
-        self.mobile_target = settings.ha_mobile_target
+        self.base_url = (settings.ha_base_url or "").rstrip("/") or None
+        self.token = (settings.ha_token or "").strip() or None
+        self.mobile_target = (settings.ha_mobile_target or "").strip() or None
         self._client = httpx.AsyncClient(timeout=30)
 
     async def send_decision_request(

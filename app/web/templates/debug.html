@@ -32,7 +32,7 @@
   </div>
   {% endif %}
 
-  <div class="mt-6 grid gap-6 md:grid-cols-2">
+  <div class="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
     <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
       <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Service configuration</h2>
       <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
@@ -122,6 +122,40 @@
         No audit has been run yet. Use the button above to execute all connectivity checks at once.
       </p>
       {% endif %}
+    </div>
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
+      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Environment snapshot</h2>
+      {% set env = environment %}
+      <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+        <div>
+          <dt class="font-medium flex items-center justify-between gap-3">
+            <span>Home Assistant</span>
+            {% if env.home_assistant.configured %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Loaded</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200">Partial</span>
+            {% endif %}
+          </dt>
+          <dd class="mt-2 space-y-1">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Base URL</div>
+            <div class="font-mono text-xs break-all">{{ env.home_assistant.base_url or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Notify target</div>
+            <div class="font-mono text-xs break-all">{{ env.home_assistant.target or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Token</div>
+            <div class="font-mono text-xs">{{ env.home_assistant.token }}</div>
+          </dd>
+        </div>
+        <div>
+          <dt class="font-medium">Ollama</dt>
+          <dd class="mt-2 space-y-1">
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Endpoint</div>
+            <div class="font-mono text-xs break-all">{{ env.ollama.endpoint }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Model</div>
+            <div class="font-mono text-xs break-words">{{ env.ollama.model }}</div>
+          </dd>
+        </div>
+      </dl>
+      <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">Tokens are truncated for safety. Update the `.env` file or container environment to change these values.</p>
     </div>
   </div>
 

@@ -73,6 +73,30 @@ def _service_overview() -> Dict[str, Dict[str, Any]]:
     }
 
 
+def _mask_secret(value: str | None) -> str:
+    if not value:
+        return "—"
+    cleaned = value.strip()
+    if len(cleaned) <= 8:
+        return cleaned
+    return f"{cleaned[:4]}…{cleaned[-4:]}"
+
+
+def _environment_snapshot() -> Dict[str, Any]:
+    return {
+        "home_assistant": {
+            "base_url": settings.ha_base_url or "",
+            "token": _mask_secret(settings.ha_token),
+            "target": settings.ha_mobile_target or "",
+            "configured": bool(settings.ha_base_url and settings.ha_token and settings.ha_mobile_target),
+        },
+        "ollama": {
+            "endpoint": settings.ollama_endpoint,
+            "model": settings.ollama_model,
+        },
+    }
+
+
 def _friendly_imap_error(exc: Exception) -> str:
     message = str(exc)
     if "NONAUTH" in message or "LOGIN failed" in message:
@@ -202,6 +226,7 @@ async def debug_tools(request: Request, templates: Jinja2Templates = Depends(get
             "results": _empty_debug_results(),
             "flash": None,
             "overview": _service_overview(),
+            "environment": _environment_snapshot(),
         },
     )
 
@@ -321,5 +346,11 @@ async def debug_tools_run(
 
     return templates.TemplateResponse(
         "debug.html",
-        {"request": request, "results": results, "flash": flash, "overview": _service_overview()},
+        {
+            "request": request,
+            "results": results,
+            "flash": flash,
+            "overview": _service_overview(),
+            "environment": _environment_snapshot(),
+        },
     )

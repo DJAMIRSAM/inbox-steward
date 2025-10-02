@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field, validator
+from pydantic import AliasChoices, Field, validator
 from pydantic_settings import BaseSettings
 
 
@@ -39,15 +39,29 @@ class Settings(BaseSettings):
 
     ha_base_url: Optional[str] = Field(
         "http://homeassistant.local:8123",
-        env=["HOME_ASSISTANT_BASE_URL", "HOME_ASSISTANT_URL", "HA_BASE_URL", "HASS_BASE_URL"],
+        validation_alias=AliasChoices(
+            "HOME_ASSISTANT_BASE_URL",
+            "HOME_ASSISTANT_URL",
+            "HA_BASE_URL",
+            "HASS_BASE_URL",
+        ),
     )
     ha_token: Optional[str] = Field(
         None,
-        env=["HOME_ASSISTANT_TOKEN", "HOME_ASSISTANT_LONG_LIVED_TOKEN", "HA_TOKEN", "HASS_TOKEN"],
+        validation_alias=AliasChoices(
+            "HOME_ASSISTANT_TOKEN",
+            "HOME_ASSISTANT_LONG_LIVED_TOKEN",
+            "HA_TOKEN",
+            "HASS_TOKEN",
+        ),
     )
     ha_mobile_target: Optional[str] = Field(
         "notify.mobile_app",
-        env=["HOME_ASSISTANT_MOBILE_TARGET", "HOME_ASSISTANT_NOTIFY_TARGET", "HA_NOTIFY_TARGET"],
+        validation_alias=AliasChoices(
+            "HOME_ASSISTANT_MOBILE_TARGET",
+            "HOME_ASSISTANT_NOTIFY_TARGET",
+            "HA_NOTIFY_TARGET",
+        ),
     )
 
     web_admin_password: str = Field("change-me", env="WEB_ADMIN_PASSWORD")
