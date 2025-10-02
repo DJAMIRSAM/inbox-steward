@@ -37,7 +37,14 @@ def _format_time(value: datetime | None) -> str:
 
 
 def _empty_debug_results() -> dict[str, dict[str, object] | None]:
-    return {"email": None, "ollama": None, "home_assistant": None, "folders": None, "audit": None}
+    return {
+        "email": None,
+        "ollama": None,
+        "home_assistant": None,
+        "folders": None,
+        "imap": None,
+        "audit": None,
+    }
 
 
 def _service_overview() -> Dict[str, Dict[str, Any]]:
@@ -128,6 +135,17 @@ async def _check_home_assistant(send_notification: bool = False) -> dict[str, An
     if send_notification:
         return await notifier.send_test_notification()
     return await notifier.check_status()
+
+
+async def _imap_diagnostics() -> dict[str, Any]:
+    try:
+        details = await asyncio.to_thread(email_client.diagnostics)
+        if not details.get("ok") and "error" not in details:
+            details["error"] = details.get("mailbox_error") or details.get("capabilities_error") or "Unknown IMAP error"
+        return details
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("IMAP diagnostics failed")
+        return {"ok": False, "error": _friendly_imap_error(exc)}
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -247,26 +265,48 @@ async def debug_tools_run(
                 "status": "error",
                 "message": result.get("error", "Home Assistant notification failed."),
             }
+    elif action == "imap_diagnostics":
+        result = await _imap_diagnostics()
+        results["imap"] = result
+        if result.get("ok"):
+            flash = {
+                "status": "success",
+                "message": "IMAP session is authenticated and mailbox statistics are available.",
+            }
+        else:
+            flash = {
+                "status": "error",
+                "message": result.get("error", "Unable to inspect IMAP session."),
+            }
+    elif action == "reset_imap":
+        await asyncio.to_thread(email_client.reset_connection)
+        results["imap"] = {"ok": True, "reset": True}
+        flash = {
+            "status": "info",
+            "message": "IMAP connection reset. Run a diagnostic to establish a fresh session.",
+        }
     elif action == "run_audit":
         email_result = await _check_latest_email()
         folder_result = await _list_imap_folders()
         ollama_result = await _check_ollama_ping()
         ha_result = await _check_home_assistant()
+        imap_result = await _imap_diagnostics()
         results.update(
             {
                 "email": email_result,
                 "folders": folder_result,
                 "ollama": ollama_result,
                 "home_assistant": ha_result,
+                "imap": imap_result,
                 "audit": {
-                    "imap": email_result.get("ok", False),
+                    "imap": imap_result.get("ok", False),
                     "folders": folder_result.get("ok", False),
                     "ollama": ollama_result.get("ok", False),
                     "home_assistant": ha_result.get("ok", False),
                 },
             }
         )
-        if all(item.get("ok") for item in [email_result, folder_result, ollama_result, ha_result]):
+        if all(item.get("ok") for item in [email_result, folder_result, ollama_result, ha_result, imap_result]):
             flash = {
                 "status": "success",
                 "message": "All connectivity checks passed. Inbox Steward is ready to run.",

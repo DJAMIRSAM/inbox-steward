@@ -9,11 +9,33 @@
       rel="stylesheet"
     />
     <script>
-      const savedTheme = localStorage.getItem('theme');
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-        document.documentElement.classList.add('dark');
-      }
+      (function () {
+        const root = document.documentElement;
+        const cycle = ['light', 'dark', 'oled'];
+        const apply = (mode, persist) => {
+          root.classList.remove('dark', 'oled');
+          if (mode === 'dark') {
+            root.classList.add('dark');
+          }
+          if (mode === 'oled') {
+            root.classList.add('dark');
+            root.classList.add('oled');
+          }
+          root.dataset.theme = mode;
+          if (persist) {
+            localStorage.setItem('theme', mode);
+          }
+        };
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const initial = cycle.includes(savedTheme) ? savedTheme : prefersDark ? 'dark' : 'light';
+        apply(initial, false);
+        window.__themeController = {
+          apply: (mode) => apply(mode, true),
+          current: () => root.dataset.theme || 'light',
+          cycle,
+        };
+      })();
       window.tailwind = window.tailwind || {};
       window.tailwind.config = {
         darkMode: 'class',
@@ -53,11 +75,9 @@
             id="theme-toggle"
             type="button"
             class="ml-2 inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
-            aria-label="Toggle dark mode"
           >
-            <span class="hidden dark:inline">🌙</span>
-            <span class="dark:hidden">☀️</span>
-            Theme
+            <span data-theme-icon class="text-base leading-none">☀️</span>
+            <span data-theme-label>Light</span>
           </button>
         </div>
       </div>
@@ -70,11 +90,29 @@
     </footer>
     <script>
       const themeToggle = document.getElementById('theme-toggle');
-      if (themeToggle) {
+      const themeIcon = document.querySelector('[data-theme-icon]');
+      const themeLabel = document.querySelector('[data-theme-label]');
+      const controller = window.__themeController;
+      const icons = { light: '☀️', dark: '🌙', oled: '🖤' };
+      const labels = { light: 'Light', dark: 'Dark', oled: 'OLED' };
+
+      const updateThemeToggle = () => {
+        if (!themeToggle || !controller) return;
+        const current = controller.current();
+        if (themeIcon) themeIcon.textContent = icons[current] || '☀️';
+        if (themeLabel) themeLabel.textContent = labels[current] || current;
+        themeToggle.setAttribute('aria-label', `Switch theme (current: ${labels[current] || current})`);
+      };
+
+      if (themeToggle && controller) {
         themeToggle.addEventListener('click', () => {
-          const isDark = document.documentElement.classList.toggle('dark');
-          localStorage.setItem('theme', isDark ? 'dark' : 'light');
+          const cycle = controller.cycle;
+          const current = controller.current();
+          const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
+          controller.apply(next);
+          updateThemeToggle();
         });
+        updateThemeToggle();
       }
     </script>
   </body>

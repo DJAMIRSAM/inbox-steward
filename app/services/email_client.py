@@ -11,6 +11,7 @@ from email.message import Message
 from typing import Any, Dict, List, Optional
 
 from imapclient import IMAPClient
+from imapclient.exceptions import IMAPClientError
 
 from app.core.config import settings
 
@@ -27,12 +28,22 @@ class EmailClient:
     def connect(self) -> IMAPClient:
         if self._client is None:
             logger.info("Connecting to IMAP %s", settings.imap_host)
-            self._client = IMAPClient(
+            client = IMAPClient(
                 settings.imap_host,
                 port=settings.imap_port,
                 ssl=settings.imap_use_ssl,
             )
-            self._client.login(settings.imap_username, settings.imap_password)
+            try:
+                client.login(settings.imap_username, settings.imap_password)
+            except Exception:  # noqa: BLE001
+                logger.exception("IMAP login failed")
+                try:
+                    client.shutdown()
+                except Exception:  # noqa: BLE001
+                    logger.debug("IMAP client shutdown raised but was ignored", exc_info=True)
+                self._client = None
+                raise
+            self._client = client
         return self._client
 
     def fetch_seen_messages(self) -> List[Dict[str, Any]]:
@@ -102,6 +113,76 @@ class EmailClient:
         folders = sorted(item[2] for item in client.list_folders())
         self._folder_cache = (time.monotonic(), folders)
         return folders
+
+    def diagnostics(self) -> Dict[str, Any]:
+        client = self.connect()
+        state = getattr(getattr(client, "_imap", None), "state", None)
+        if hasattr(state, "name"):
+            state_name = state.name  # type: ignore[attr-defined]
+        else:
+            state_name = str(state) if state else "unknown"
+
+        capabilities: List[str] = []
+        capabilities_error: Optional[str] = None
+        try:
+            raw_caps = client.capabilities() or []
+            capabilities = sorted(
+                cap.decode() if isinstance(cap, bytes) else str(cap)
+                for cap in raw_caps
+            )
+        except Exception as exc:  # noqa: BLE001
+            capabilities_error = str(exc)
+
+        mailbox_status: Dict[str, Any] = {}
+        mailbox_error: Optional[str] = None
+        try:
+            status = client.folder_status(
+                settings.imap_mailbox,
+                what=("MESSAGES", "RECENT", "UNSEEN"),
+            )
+            mailbox_status = {
+                (key.decode() if isinstance(key, bytes) else str(key)).lower(): int(value)
+                for key, value in status.items()
+            }
+        except IMAPClientError as exc:
+            mailbox_error = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            mailbox_error = str(exc)
+
+        try:
+            selected = client.get_selected_folder()
+            if isinstance(selected, bytes):
+                selected_folder = selected.decode()
+            else:
+                selected_folder = selected
+        except Exception:  # noqa: BLE001
+            selected_folder = None
+
+        return {
+            "ok": mailbox_error is None,
+            "state": state_name,
+            "selected_folder": selected_folder,
+            "server": f"{settings.imap_host}:{settings.imap_port}",
+            "ssl": settings.imap_use_ssl,
+            "mailbox": settings.imap_mailbox,
+            "mailbox_status": mailbox_status,
+            "mailbox_error": mailbox_error,
+            "capabilities": capabilities,
+            "capabilities_error": capabilities_error,
+        }
+
+    def reset_connection(self) -> None:
+        if self._client is not None:
+            try:
+                self._client.logout()
+            except Exception:  # noqa: BLE001
+                try:
+                    self._client.shutdown()
+                except Exception:  # noqa: BLE001
+                    logger.debug("IMAP client shutdown during reset raised", exc_info=True)
+            finally:
+                self._client = None
+        self._folder_cache = None
 
     def _parse_message(self, uid: int, message: Message, metadata: Dict[bytes, Any]) -> Dict[str, Any]:
         subject = self._decode(message.get("Subject", ""))

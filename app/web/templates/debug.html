@@ -39,27 +39,57 @@
         <div class="flex items-center justify-between gap-3">
           <dt class="font-medium">IMAP</dt>
           <dd class="text-right">
-            <div>{{ overview.imap.host }} &middot; {{ overview.imap.mailbox }}</div>
+            <div class="flex items-center justify-end gap-2">
+              <span>{{ overview.imap.host }} &middot; {{ overview.imap.mailbox }}</span>
+              {% if overview.imap.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
             <div class="text-xs text-slate-500 dark:text-slate-400">{{ overview.imap.username }} &middot; poll {{ overview.imap.poll }}s</div>
           </dd>
         </div>
         <div class="flex items-center justify-between gap-3">
           <dt class="font-medium">Ollama</dt>
           <dd class="text-right">
-            <div>{{ overview.ollama.endpoint }}</div>
+            <div class="flex items-center justify-end gap-2">
+              <span>{{ overview.ollama.endpoint }}</span>
+              {% if overview.ollama.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
             <div class="text-xs text-slate-500 dark:text-slate-400">Model: {{ overview.ollama.model }}</div>
           </dd>
         </div>
         <div class="flex items-center justify-between gap-3">
           <dt class="font-medium">Home Assistant</dt>
           <dd class="text-right">
-            <div>{{ overview.home_assistant.base_url or '—' }}</div>
+            <div class="flex items-center justify-end gap-2">
+              <span>{{ overview.home_assistant.base_url or '—' }}</span>
+              {% if overview.home_assistant.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
             <div class="text-xs text-slate-500 dark:text-slate-400">Target: {{ overview.home_assistant.target or '—' }}</div>
           </dd>
         </div>
         <div class="flex items-center justify-between gap-3">
           <dt class="font-medium">Database</dt>
-          <dd class="text-right truncate" title="{{ overview.database.url }}">{{ overview.database.url }}</dd>
+          <dd class="text-right">
+            <div class="flex items-center justify-end gap-2">
+              <span class="truncate max-w-[220px]" title="{{ overview.database.url }}">{{ overview.database.url }}</span>
+              {% if overview.database.configured %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
+              {% endif %}
+            </div>
+          </dd>
         </div>
       </dl>
     </div>
@@ -95,7 +125,7 @@
     </div>
   </div>
 
-  <div class="mt-8 grid gap-6 xl:grid-cols-2">
+  <div class="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
     <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
       <div>
         <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">IMAP mailbox</h2>
@@ -159,6 +189,79 @@
         </ul>
         {% else %}
         <p class="text-rose-600 dark:text-rose-300">{{ folder_result.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">IMAP session health</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Inspect the authenticated session, mailbox counters, and server capabilities.</p>
+      </div>
+      <div class="mt-auto flex flex-col sm:flex-row gap-3">
+        <form method="post" class="flex-1">
+          <input type="hidden" name="action" value="imap_diagnostics" />
+          <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Inspect session</button>
+        </form>
+        <form method="post" class="flex-1">
+          <input type="hidden" name="action" value="reset_imap" />
+          <button type="submit" class="w-full px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 rounded-lg shadow-sm">Reset connection</button>
+        </form>
+      </div>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-3">
+        {% set imap = results.imap %}
+        {% if imap is none %}
+        <p class="text-slate-400 dark:text-slate-500">Run diagnostics to view live IMAP session details.</p>
+        {% elif imap.reset %}
+        <p class="text-slate-500 dark:text-slate-300">Connection reset. Inspect the session to confirm a fresh login succeeds.</p>
+        {% elif imap.ok %}
+        <dl class="space-y-2">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Server</dt>
+            <dd class="font-medium text-slate-700 dark:text-slate-100">{{ imap.server }}{% if imap.ssl %} · SSL{% endif %}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">State</dt>
+            <dd>{{ imap.state }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Selected folder</dt>
+            <dd>{{ imap.selected_folder or '—' }}</dd>
+          </div>
+          {% if imap.mailbox_status %}
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Mailbox counters</dt>
+            <dd class="mt-1 grid grid-cols-3 gap-2 text-xs">
+              {% for key, value in imap.mailbox_status.items() %}
+              <span class="rounded-md bg-slate-200/60 dark:bg-slate-800/60 px-2 py-1 text-center">{{ key }}: {{ value }}</span>
+              {% endfor %}
+            </dd>
+          </div>
+          {% endif %}
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Capabilities</dt>
+            {% if imap.capabilities %}
+            <dd class="mt-1 flex flex-wrap gap-1 text-xs">
+              {% for cap in imap.capabilities %}
+              <span class="px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800/70">{{ cap }}</span>
+              {% endfor %}
+            </dd>
+            {% elif imap.capabilities_error %}
+            <dd class="text-rose-600 dark:text-rose-300">{{ imap.capabilities_error }}</dd>
+            {% else %}
+            <dd>Unavailable</dd>
+            {% endif %}
+          </div>
+        </dl>
+        {% else %}
+        <div class="space-y-2">
+          <p class="text-rose-600 dark:text-rose-300">{{ imap.error }}</p>
+          {% if imap.mailbox_error %}
+          <p class="text-xs text-slate-500 dark:text-slate-400">Mailbox error: {{ imap.mailbox_error }}</p>
+          {% endif %}
+          {% if imap.capabilities_error %}
+          <p class="text-xs text-slate-500 dark:text-slate-400">Capabilities error: {{ imap.capabilities_error }}</p>
+          {% endif %}
+        </div>
         {% endif %}
       </div>
     </div>
