@@ -60,6 +60,26 @@ class HomeAssistantNotifier:
             data["data"]["url"] = f"/api/undo/{undo_token}"
         await self._send("Review digest", data)
 
+    async def send_test_notification(self) -> dict[str, str | int | bool]:
+        if not self._enabled:
+            return {"ok": False, "error": "Home Assistant credentials not configured."}
+        payload = {
+            "title": "Inbox Steward connectivity test",
+            "message": "This is a debug notification from Inbox Steward.",
+            "data": {"tag": "inbox-steward-debug"},
+        }
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/api/services/notify/{self.mobile_target}",
+                headers={"Authorization": f"Bearer {self.token}"},
+                json=payload,
+            )
+            response.raise_for_status()
+            return {"ok": True, "status": response.status_code}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Home Assistant test notification failed")
+            return {"ok": False, "error": str(exc)}
+
     async def _send(self, event: str, payload: dict) -> None:
         try:
             response = await self._client.post(

@@ -50,6 +50,21 @@ class EmailClient:
             messages.append(parsed)
         return messages
 
+    def fetch_latest_message(self) -> Optional[Dict[str, Any]]:
+        client = self.connect()
+        client.select_folder(settings.imap_mailbox)
+        uids = client.search(["ALL"])
+        if not uids:
+            return None
+        latest_uid = max(uids)
+        response = client.fetch([latest_uid], ["RFC822", "FLAGS", "ENVELOPE", "BODYSTRUCTURE"])
+        data = response.get(latest_uid)
+        if not data:
+            return None
+        raw_message: bytes = data.get(b"RFC822", b"")
+        msg = email.message_from_bytes(raw_message)
+        return self._parse_message(latest_uid, msg, data)
+
     def move(self, uid: int | str, destination: str) -> None:
         client = self.connect()
         logger.info("Moving message %s -> %s", uid, destination)

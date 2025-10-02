@@ -35,6 +35,22 @@ class OllamaClassifier:
             logger.exception("Falling back to heuristic classification: %s", exc)
             return self._fallback(prompt_context)
 
+    async def ping(self) -> Dict[str, Any]:
+        payload = {
+            "model": self.model,
+            "prompt": "Hello from Inbox Steward. Reply with a short greeting.",
+            "stream": False,
+        }
+        try:
+            response = await self._client.post(f"{self.endpoint}/api/generate", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            message = (data.get("response") or "").strip()
+            return {"ok": True, "response": message or "(empty response)"}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Ollama ping failed")
+            return {"ok": False, "error": str(exc)}
+
     async def close(self) -> None:
         await self._client.aclose()
 

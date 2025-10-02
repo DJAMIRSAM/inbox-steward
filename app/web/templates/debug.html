@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900">Diagnostics</h1>
+      <p class="text-sm text-slate-500 mt-2">
+        Run targeted checks to confirm Inbox Steward can reach IMAP, Ollama, and Home Assistant.
+      </p>
+    </div>
+  </div>
+
+  {% if flash %}
+  {% if flash.status == 'success' %}
+  {% set flash_classes = 'border-green-200 bg-green-50 text-green-700' %}
+  {% elif flash.status == 'error' %}
+  {% set flash_classes = 'border-rose-200 bg-rose-50 text-rose-700' %}
+  {% else %}
+  {% set flash_classes = 'border-slate-200 bg-slate-50 text-slate-600' %}
+  {% endif %}
+  <div class="mt-6 px-4 py-3 rounded-xl border {{ flash_classes }}">
+    {{ flash.message }}
+  </div>
+  {% endif %}
+
+  <div class="mt-6 grid gap-6 md:grid-cols-3">
+    <div class="border border-slate-200 rounded-xl p-5 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800">IMAP mailbox</h2>
+        <p class="text-sm text-slate-500">Pulls the newest message and shows a quick preview.</p>
+      </div>
+      <form method="post" class="mt-auto">
+        <input type="hidden" name="action" value="test_email" />
+        <button type="submit" class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm">
+          Fetch latest message
+        </button>
+      </form>
+      <div class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-4">
+        {% set email = results.email %}
+        {% if email is none %}
+        <p class="text-slate-400">No test run yet.</p>
+        {% elif email.ok %}
+        <dl class="space-y-2">
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500">Subject</dt>
+            <dd class="font-medium text-slate-800">{{ email.message.subject or '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500">From</dt>
+            <dd>{{ email.message.sender or '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500">Received</dt>
+            <dd>{{ email.message.received_at or '—' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs uppercase tracking-wide text-slate-500">Preview</dt>
+            <dd class="text-slate-700">{{ email.message.snippet or '—' }}</dd>
+          </div>
+        </dl>
+        {% else %}
+        <p class="text-rose-600">{{ email.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="border border-slate-200 rounded-xl p-5 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800">Ollama model</h2>
+        <p class="text-sm text-slate-500">Sends a friendly hello and shows the model response.</p>
+      </div>
+      <form method="post" class="mt-auto">
+        <input type="hidden" name="action" value="test_ollama" />
+        <button type="submit" class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm">
+          Ping Ollama
+        </button>
+      </form>
+      <div class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-4">
+        {% set ollama = results.ollama %}
+        {% if ollama is none %}
+        <p class="text-slate-400">No test run yet.</p>
+        {% elif ollama.ok %}
+        <p class="text-slate-700">{{ ollama.response }}</p>
+        {% else %}
+        <p class="text-rose-600">{{ ollama.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="border border-slate-200 rounded-xl p-5 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800">Home Assistant</h2>
+        <p class="text-sm text-slate-500">Pushes a one-off test notification to your configured mobile target.</p>
+      </div>
+      <form method="post" class="mt-auto">
+        <input type="hidden" name="action" value="test_home_assistant" />
+        <button type="submit" class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm">
+          Send test notification
+        </button>
+      </form>
+      <div class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-4">
+        {% set ha = results.home_assistant %}
+        {% if ha is none %}
+        <p class="text-slate-400">No test run yet.</p>
+        {% elif ha.ok %}
+        <p class="text-slate-700">Notification request accepted (HTTP {{ ha.status }}).</p>
+        {% else %}
+        <p class="text-rose-600">{{ ha.error }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
