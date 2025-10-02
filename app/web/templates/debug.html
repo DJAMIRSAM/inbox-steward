@@ -1,348 +1,301 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-8">
-  <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-    <div>
-      <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Diagnostics</h1>
-      <p class="text-sm text-slate-500 dark:text-slate-400 mt-2">
-        Confirm Inbox Steward can reach your mailbox, Ollama model, and Home Assistant notification target.
-      </p>
-    </div>
-    <form method="post" class="flex items-center gap-3">
-      <input type="hidden" name="action" value="run_audit" />
+{% include "partials/debug_content.html" %}
+
+<div
+  id="debug-progress-overlay"
+  class="debug-progress-overlay"
+  aria-hidden="true"
+  role="status"
+>
+  <div class="debug-progress-panel">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-brand-500">Diagnostics running</p>
+        <h2 class="mt-1 text-lg font-semibold text-slate-800 dark:text-slate-100" data-progress-title>Working…</h2>
+      </div>
       <button
-        type="submit"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white shadow-sm"
+        type="button"
+        class="debug-progress-close"
+        data-progress-close
+        aria-label="Hide progress"
       >
-        <span>Run connectivity audit</span>
+        ✕
       </button>
-    </form>
+    </div>
+    <p class="mt-3 text-sm text-slate-600 dark:text-slate-300" data-progress-status>Preparing diagnostics…</p>
+    <div class="mt-4 h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+      <div class="h-full bg-brand-600 transition-all duration-200" data-progress-bar style="width: 0%"></div>
+    </div>
+    <ul class="mt-4 space-y-3" data-progress-list></ul>
   </div>
+</div>
 
-  {% if flash %}
-  {% if flash.status == 'success' %}
-  {% set flash_classes = 'border-green-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' %}
-  {% elif flash.status == 'error' %}
-  {% set flash_classes = 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/40 dark:text-rose-200' %}
-  {% else %}
-  {% set flash_classes = 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200' %}
-  {% endif %}
-  <div class="mt-6 px-4 py-3 rounded-xl border {{ flash_classes }}">
-    {{ flash.message }}
-  </div>
-  {% endif %}
+<script type="application/json" id="debug-progress-data">{{ progress_steps | tojson }}</script>
+<script>
+  (function () {
+    const progressConfigEl = document.getElementById('debug-progress-data');
+    const progressConfig = progressConfigEl ? JSON.parse(progressConfigEl.textContent || '{}') : {};
+    const overlay = document.getElementById('debug-progress-overlay');
+    if (!overlay) {
+      return;
+    }
+    const progressList = overlay.querySelector('[data-progress-list]');
+    const progressTitle = overlay.querySelector('[data-progress-title]');
+    const progressStatus = overlay.querySelector('[data-progress-status]');
+    const progressBar = overlay.querySelector('[data-progress-bar]');
+    const closeButton = overlay.querySelector('[data-progress-close]');
 
-  <div class="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
-      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Service configuration</h2>
-      <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
-        <div class="flex items-center justify-between gap-3">
-          <dt class="font-medium">IMAP</dt>
-          <dd class="text-right">
-            <div class="flex items-center justify-end gap-2">
-              <span>{{ overview.imap.host }} &middot; {{ overview.imap.mailbox }}</span>
-              {% if overview.imap.configured %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
-              {% else %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
-              {% endif %}
-            </div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">{{ overview.imap.username }} &middot; poll {{ overview.imap.poll }}s</div>
-          </dd>
-        </div>
-        <div class="flex items-center justify-between gap-3">
-          <dt class="font-medium">Ollama</dt>
-          <dd class="text-right">
-            <div class="flex items-center justify-end gap-2">
-              <span>{{ overview.ollama.endpoint }}</span>
-              {% if overview.ollama.configured %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
-              {% else %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
-              {% endif %}
-            </div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">Model: {{ overview.ollama.model }}</div>
-          </dd>
-        </div>
-        <div class="flex items-center justify-between gap-3">
-          <dt class="font-medium">Home Assistant</dt>
-          <dd class="text-right">
-            <div class="flex items-center justify-end gap-2">
-              <span>{{ overview.home_assistant.base_url or '—' }}</span>
-              {% if overview.home_assistant.configured %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
-              {% else %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
-              {% endif %}
-            </div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">Target: {{ overview.home_assistant.target or '—' }}</div>
-          </dd>
-        </div>
-        <div class="flex items-center justify-between gap-3">
-          <dt class="font-medium">Database</dt>
-          <dd class="text-right">
-            <div class="flex items-center justify-end gap-2">
-              <span class="truncate max-w-[220px]" title="{{ overview.database.url }}">{{ overview.database.url }}</span>
-              {% if overview.database.configured %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
-              {% else %}
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
-              {% endif %}
-            </div>
-          </dd>
-        </div>
-      </dl>
-    </div>
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
-      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Last audit snapshot</h2>
-      {% set audit = results.audit %}
-      {% if audit %}
-      <ul class="mt-4 space-y-2 text-sm">
-        {% for key, label in {'imap': 'IMAP login', 'folders': 'Folder tree', 'ollama': 'Ollama API', 'home_assistant': 'Home Assistant'}.items() %}
-        {% set ok = audit.get(key) %}
-        <li class="flex items-center justify-between gap-3">
-          <span class="text-slate-600 dark:text-slate-300">{{ label }}</span>
-          {% if ok %}
-          <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">
-            <span>●</span>
-            Passing
-          </span>
-          {% else %}
-          <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">
-            <span>●</span>
-            Attention needed
-          </span>
-          {% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-      <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">Run a new audit anytime to refresh these results.</p>
-      {% else %}
-      <p class="mt-4 text-sm text-slate-500 dark:text-slate-300">
-        No audit has been run yet. Use the button above to execute all connectivity checks at once.
-      </p>
-      {% endif %}
-    </div>
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
-      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Environment snapshot</h2>
-      {% set env = environment %}
-      <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
-        <div>
-          <dt class="font-medium flex items-center justify-between gap-3">
-            <span>Home Assistant</span>
-            {% if env.home_assistant.configured %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Loaded</span>
-            {% else %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200">Partial</span>
-            {% endif %}
-          </dt>
-          <dd class="mt-2 space-y-1">
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Base URL</div>
-            <div class="font-mono text-xs break-all">{{ env.home_assistant.base_url or '—' }}</div>
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Notify target</div>
-            <div class="font-mono text-xs break-all">{{ env.home_assistant.target or '—' }}</div>
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Token</div>
-            <div class="font-mono text-xs">{{ env.home_assistant.token }}</div>
-          </dd>
-        </div>
-        <div>
-          <dt class="font-medium">Ollama</dt>
-          <dd class="mt-2 space-y-1">
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Endpoint</div>
-            <div class="font-mono text-xs break-all">{{ env.ollama.endpoint }}</div>
-            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Model</div>
-            <div class="font-mono text-xs break-words">{{ env.ollama.model }}</div>
-          </dd>
-        </div>
-      </dl>
-      <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">Tokens are truncated for safety. Update the `.env` file or container environment to change these values.</p>
-    </div>
-  </div>
+    let activeJob = null;
+    let polling = null;
+    let hideTimeout = null;
 
-  <div class="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
-      <div>
-        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">IMAP mailbox</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">Pulls the newest message and shows a quick preview.</p>
-      </div>
-      <form method="post" class="mt-auto">
-        <input type="hidden" name="action" value="test_email" />
-        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Fetch latest message</button>
-      </form>
-      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-        {% set email = results.email %}
-        {% if email is none %}
-        <p class="text-slate-400 dark:text-slate-500">No test run yet.</p>
-        {% elif email.ok %}
-        <dl class="space-y-2">
-          <div>
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Subject</dt>
-            <dd class="font-medium text-slate-800 dark:text-slate-100">{{ email.message.subject or '—' }}</dd>
-          </div>
-          <div>
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">From</dt>
-            <dd>{{ email.message.sender or '—' }}</dd>
-          </div>
-          <div>
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Received</dt>
-            <dd>{{ email.message.received_at or '—' }}</dd>
-          </div>
-          <div>
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Folder</dt>
-            <dd>{{ email.message.folder or '—' }}</dd>
-          </div>
-          <div>
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Preview</dt>
-            <dd class="text-slate-700 dark:text-slate-200">{{ email.message.snippet or '—' }}</dd>
-          </div>
-        </dl>
-        {% else %}
-        <p class="text-rose-600 dark:text-rose-300">{{ email.error }}</p>
-        {% endif %}
-      </div>
-    </div>
+    const resetOverlay = () => {
+      overlay.classList.remove('is-visible', 'has-error');
+      overlay.setAttribute('aria-hidden', 'true');
+      progressStatus.textContent = 'Preparing diagnostics…';
+      progressBar.style.width = '0%';
+      progressBar.classList.remove('bg-emerald-500', 'bg-rose-500');
+      if (progressList) {
+        progressList.innerHTML = '';
+      }
+      if (hideTimeout) {
+        clearTimeout(hideTimeout);
+        hideTimeout = null;
+      }
+    };
 
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
-      <div>
-        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Mailbox folders</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">Lists every IMAP folder the assistant can see.</p>
-      </div>
-      <form method="post" class="mt-auto">
-        <input type="hidden" name="action" value="list_folders" />
-        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Refresh folder tree</button>
-      </form>
-      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 max-h-64 overflow-y-auto">
-        {% set folder_result = results.folders %}
-        {% if folder_result is none %}
-        <p class="text-slate-400 dark:text-slate-500">No folder check yet.</p>
-        {% elif folder_result.ok %}
-        <ul class="space-y-1 font-mono text-xs">
-          {% for folder in folder_result.folders %}
-          <li class="text-slate-700 dark:text-slate-200">{{ folder }}</li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="text-rose-600 dark:text-rose-300">{{ folder_result.error }}</p>
-        {% endif %}
-      </div>
-    </div>
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
-      <div>
-        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">IMAP session health</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">Inspect the authenticated session, mailbox counters, and server capabilities.</p>
-      </div>
-      <div class="mt-auto flex flex-col sm:flex-row gap-3">
-        <form method="post" class="flex-1">
-          <input type="hidden" name="action" value="imap_diagnostics" />
-          <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Inspect session</button>
-        </form>
-        <form method="post" class="flex-1">
-          <input type="hidden" name="action" value="reset_imap" />
-          <button type="submit" class="w-full px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 rounded-lg shadow-sm">Reset connection</button>
-        </form>
-      </div>
-      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-3">
-        {% set imap = results.imap %}
-        {% if imap is none %}
-        <p class="text-slate-400 dark:text-slate-500">Run diagnostics to view live IMAP session details.</p>
-        {% elif imap.reset %}
-        <p class="text-slate-500 dark:text-slate-300">Connection reset. Inspect the session to confirm a fresh login succeeds.</p>
-        {% elif imap.ok %}
-        <dl class="space-y-2">
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Server</dt>
-            <dd class="font-medium text-slate-700 dark:text-slate-100">{{ imap.server }}{% if imap.ssl %} · SSL{% endif %}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">State</dt>
-            <dd>{{ imap.state }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Selected folder</dt>
-            <dd>{{ imap.selected_folder or '—' }}</dd>
-          </div>
-          {% if imap.mailbox_status %}
-          <div>
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Mailbox counters</dt>
-            <dd class="mt-1 grid grid-cols-3 gap-2 text-xs">
-              {% for key, value in imap.mailbox_status.items() %}
-              <span class="rounded-md bg-slate-200/60 dark:bg-slate-800/60 px-2 py-1 text-center">{{ key }}: {{ value }}</span>
-              {% endfor %}
-            </dd>
-          </div>
-          {% endif %}
-          <div>
-            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Capabilities</dt>
-            {% if imap.capabilities %}
-            <dd class="mt-1 flex flex-wrap gap-1 text-xs">
-              {% for cap in imap.capabilities %}
-              <span class="px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800/70">{{ cap }}</span>
-              {% endfor %}
-            </dd>
-            {% elif imap.capabilities_error %}
-            <dd class="text-rose-600 dark:text-rose-300">{{ imap.capabilities_error }}</dd>
-            {% else %}
-            <dd>Unavailable</dd>
-            {% endif %}
-          </div>
-        </dl>
-        {% else %}
-        <div class="space-y-2">
-          <p class="text-rose-600 dark:text-rose-300">{{ imap.error }}</p>
-          {% if imap.mailbox_error %}
-          <p class="text-xs text-slate-500 dark:text-slate-400">Mailbox error: {{ imap.mailbox_error }}</p>
-          {% endif %}
-          {% if imap.capabilities_error %}
-          <p class="text-xs text-slate-500 dark:text-slate-400">Capabilities error: {{ imap.capabilities_error }}</p>
-          {% endif %}
-        </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+    const ensureSteps = (action) => {
+      const config = progressConfig[action];
+      if (!config || !Array.isArray(config.steps) || !config.steps.length) {
+        return null;
+      }
+      return config;
+    };
 
-  <div class="mt-8 grid gap-6 md:grid-cols-2">
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
-      <div>
-        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Ollama model</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">Sends a friendly hello and shows the model response.</p>
-      </div>
-      <form method="post" class="mt-auto">
-        <input type="hidden" name="action" value="test_ollama" />
-        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Ping Ollama</button>
-      </form>
-      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-        {% set ollama = results.ollama %}
-        {% if ollama is none %}
-        <p class="text-slate-400 dark:text-slate-500">No test run yet.</p>
-        {% elif ollama.ok %}
-        <p class="text-slate-700 dark:text-slate-200">{{ ollama.response }}</p>
-        {% else %}
-        <p class="text-rose-600 dark:text-rose-300">{{ ollama.error }}</p>
-        {% endif %}
-      </div>
-    </div>
+    const createStepRow = (step) => {
+      const li = document.createElement('li');
+      li.className = 'debug-step';
+      li.dataset.stepKey = step.key;
+      li.dataset.status = step.status || 'pending';
+      const icon = document.createElement('span');
+      icon.className = 'debug-step-icon';
+      icon.textContent = '⏳';
+      const body = document.createElement('div');
+      body.className = 'debug-step-body';
+      const title = document.createElement('div');
+      title.className = 'debug-step-title';
+      title.textContent = step.label;
+      const detail = document.createElement('div');
+      detail.className = 'debug-step-detail';
+      detail.textContent = step.detail || '';
+      body.appendChild(title);
+      body.appendChild(detail);
+      li.appendChild(icon);
+      li.appendChild(body);
+      return li;
+    };
 
-    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
-      <div>
-        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Home Assistant</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">Pushes a one-off test notification to your configured mobile target.</p>
-      </div>
-      <form method="post" class="mt-auto">
-        <input type="hidden" name="action" value="test_home_assistant" />
-        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Send test notification</button>
-      </form>
-      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4">
-        {% set ha = results.home_assistant %}
-        {% if ha is none %}
-        <p class="text-slate-400 dark:text-slate-500">No test run yet.</p>
-        {% elif ha.ok %}
-        <p class="text-slate-700 dark:text-slate-200">Notification request accepted (HTTP {{ ha.status }}).</p>
-        {% else %}
-        <p class="text-rose-600 dark:text-rose-300">{{ ha.error }}</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-</section>
+    const updateStepRow = (li, step) => {
+      if (!li) return;
+      li.dataset.status = step.status || 'pending';
+      const icon = li.querySelector('.debug-step-icon');
+      const detail = li.querySelector('.debug-step-detail');
+      if (detail) {
+        detail.textContent = step.detail || '';
+      }
+      if (icon) {
+        const status = step.status;
+        if (status === 'complete') {
+          icon.textContent = '✓';
+        } else if (status === 'running') {
+          icon.textContent = '⏳';
+        } else if (status === 'error') {
+          icon.textContent = '⚠️';
+        } else {
+          icon.textContent = '…';
+        }
+      }
+    };
+
+    const renderSteps = (action) => {
+      const config = ensureSteps(action);
+      if (!progressList || !config) {
+        return;
+      }
+      progressList.innerHTML = '';
+      config.steps.forEach((step) => {
+        const li = createStepRow(step);
+        progressList.appendChild(li);
+      });
+    };
+
+    const applyStepUpdates = (steps) => {
+      if (!progressList || !Array.isArray(steps)) return;
+      let completed = 0;
+      let runningLabel = null;
+      steps.forEach((step) => {
+        const li = progressList.querySelector(`li[data-step-key="${step.key}"]`);
+        updateStepRow(li, step);
+        if (step.status === 'complete') {
+          completed += 1;
+        }
+        if (step.status === 'running') {
+          runningLabel = step.label;
+        }
+        if (step.status === 'error' && step.detail && progressStatus) {
+          progressStatus.textContent = step.detail;
+        }
+      });
+      if (progressBar) {
+        const total = progressList.children.length || 1;
+        const percent = Math.round((completed / total) * 100);
+        progressBar.style.width = `${percent}%`;
+      }
+      if (runningLabel && progressStatus) {
+        progressStatus.textContent = runningLabel;
+      }
+    };
+
+    const markComplete = (success = true, message = null) => {
+      if (progressBar) {
+        progressBar.style.width = '100%';
+        progressBar.classList.toggle('bg-emerald-500', success);
+        progressBar.classList.toggle('bg-rose-500', !success);
+      }
+      if (progressStatus) {
+        progressStatus.textContent = message || (success ? 'Diagnostics finished.' : 'Diagnostics failed.');
+      }
+      overlay.classList.toggle('has-error', !success);
+      hideTimeout = setTimeout(() => {
+        overlay.classList.remove('is-visible');
+        overlay.setAttribute('aria-hidden', 'true');
+      }, 1600);
+    };
+
+    const showOverlay = (action) => {
+      const config = progressConfig[action];
+      if (progressTitle) {
+        progressTitle.textContent = config && config.title ? config.title : 'Running diagnostics';
+      }
+      renderSteps(action);
+      overlay.classList.add('is-visible');
+      overlay.setAttribute('aria-hidden', 'false');
+    };
+
+    const stopPolling = () => {
+      if (polling) {
+        clearTimeout(polling);
+        polling = null;
+      }
+    };
+
+    const pollJob = async (jobId, action) => {
+      try {
+        const response = await fetch(`/debug/status/${jobId}`);
+        if (!response.ok) {
+          throw new Error('Status check failed');
+        }
+        const payload = await response.json();
+        applyStepUpdates(payload.steps || []);
+        if (payload.status === 'completed') {
+          markComplete(true, 'Diagnostics complete.');
+          if (payload.html) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(payload.html, 'text/html');
+            const next = doc.querySelector('#debug-root');
+            const current = document.querySelector('#debug-root');
+            if (next && current) {
+              current.replaceWith(next);
+              bindForms();
+            }
+          }
+          stopPolling();
+          activeJob = null;
+          return;
+        }
+        if (payload.status === 'failed') {
+          const detail = payload.error || 'Diagnostics failed to complete.';
+          markComplete(false, detail);
+          stopPolling();
+          activeJob = null;
+          return;
+        }
+        polling = setTimeout(() => pollJob(jobId, action), 500);
+      } catch (error) {
+        console.error(error);
+        markComplete(false, 'Unable to update progress.');
+        stopPolling();
+        activeJob = null;
+      }
+    };
+
+    const startJob = async (action) => {
+      if (activeJob) {
+        return;
+      }
+      const formData = { action };
+      try {
+        const response = await fetch('/debug/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+        if (!response.ok) {
+          throw new Error('Unable to start diagnostics');
+        }
+        const payload = await response.json();
+        if (!payload.job_id) {
+          throw new Error('Missing job identifier');
+        }
+        activeJob = payload.job_id;
+        pollJob(activeJob, action);
+      } catch (error) {
+        console.error(error);
+        markComplete(false, 'Diagnostics could not be started.');
+      }
+    };
+
+    const bindForms = () => {
+      const forms = document.querySelectorAll('[data-debug-form]');
+      forms.forEach((form) => {
+        if (form.dataset.debugBound === '1') {
+          return;
+        }
+        form.dataset.debugBound = '1';
+        form.addEventListener(
+          'submit',
+          (event) => {
+            const actionInput = form.querySelector('[name="action"]');
+            if (!actionInput) {
+              return;
+            }
+            const action = actionInput.value;
+            if (!action || !progressConfig[action]) {
+              return;
+            }
+            event.preventDefault();
+            resetOverlay();
+            showOverlay(action);
+            startJob(action);
+          },
+          { once: false }
+        );
+      });
+    };
+
+    if (closeButton) {
+      closeButton.addEventListener('click', () => {
+        if (activeJob) {
+          return;
+        }
+        overlay.classList.remove('is-visible');
+        overlay.setAttribute('aria-hidden', 'true');
+      });
+    }
+
+    resetOverlay();
+    bindForms();
+  })();
+</script>
 {% endblock %}

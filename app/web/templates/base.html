@@ -114,6 +114,38 @@
         });
         updateThemeToggle();
       }
+
+      const applyPageEnter = () => {
+        const main = document.querySelector('main');
+        if (!main) return;
+        main.classList.add('page-enter');
+        main.addEventListener('animationend', () => {
+          main.classList.remove('page-enter');
+        }, { once: true });
+      };
+
+      document.addEventListener('DOMContentLoaded', applyPageEnter);
+
+      const navLinks = document.querySelectorAll('nav a[href^="/"]');
+      navLinks.forEach((link) => {
+        link.addEventListener('click', (event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+          }
+          const main = document.querySelector('main');
+          if (!main) {
+            return;
+          }
+          if (link.getAttribute('href') === window.location.pathname) {
+            return;
+          }
+          event.preventDefault();
+          main.classList.add('page-exit');
+          setTimeout(() => {
+            window.location.href = link.href;
+          }, 200);
+        });
+      });
     </script>
   </body>
 </html>

@@ -108,3 +108,154 @@ button.bg-slate-200,
 .dark .btn-muted {
   border-color: rgba(100, 116, 139, 0.6);
 }
+
+main {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+main.page-enter {
+  animation: page-fade-slide 0.4s ease-out both;
+}
+
+main.page-exit {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+
+@keyframes page-fade-slide {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.debug-progress-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(6px);
+  z-index: 60;
+}
+
+.debug-progress-overlay.is-visible {
+  display: flex;
+}
+
+.debug-progress-overlay.has-error .debug-progress-panel {
+  border-color: rgba(248, 113, 113, 0.35);
+  box-shadow: 0 25px 45px -25px rgba(248, 113, 113, 0.45);
+}
+
+.debug-progress-panel {
+  width: min(420px, 100%);
+  border-radius: 1.25rem;
+  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 1.75rem;
+  box-shadow: 0 25px 65px -30px rgba(30, 41, 59, 0.35);
+}
+
+.dark .debug-progress-panel {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(148, 163, 184, 0.35);
+  box-shadow: 0 25px 65px -30px rgba(15, 23, 42, 0.7);
+}
+
+.debug-progress-close {
+  background: transparent;
+  border: none;
+  border-radius: 9999px;
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: rgba(71, 85, 105, 0.8);
+}
+
+.dark .debug-progress-close {
+  color: rgba(203, 213, 225, 0.8);
+}
+
+.debug-progress-close:hover {
+  background: rgba(99, 102, 241, 0.12);
+  color: #4f46e5;
+}
+
+.debug-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.9rem;
+  background: rgba(148, 163, 184, 0.12);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dark .debug-step {
+  background: rgba(71, 85, 105, 0.25);
+}
+
+.debug-step[data-status="running"] {
+  background: rgba(79, 70, 229, 0.14);
+}
+
+.debug-step[data-status="complete"] {
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.debug-step[data-status="error"] {
+  background: rgba(248, 113, 113, 0.16);
+}
+
+.debug-step-icon {
+  font-size: 1rem;
+  line-height: 1;
+  margin-top: 0.1rem;
+}
+
+.debug-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.debug-step-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: rgb(15, 23, 42);
+}
+
+.dark .debug-step-title {
+  color: rgb(226, 232, 240);
+}
+
+.debug-step-detail {
+  font-size: 0.8rem;
+  color: rgba(71, 85, 105, 0.85);
+}
+
+.dark .debug-step-detail {
+  color: rgba(203, 213, 225, 0.7);
+}
+
+.debug-progress-overlay.has-error .debug-step[data-status="error"] {
+  background: rgba(248, 113, 113, 0.22);
+}
+
+.debug-progress-overlay.has-error .debug-step-title,
+.debug-progress-overlay.has-error .debug-step-detail {
+  color: rgb(220, 38, 38);
+}
+
+.dark .debug-progress-overlay.has-error .debug-step-title,
+.dark .debug-progress-overlay.has-error .debug-step-detail {
+  color: rgb(248, 113, 113);
+}
