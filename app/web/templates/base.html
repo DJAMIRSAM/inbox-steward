@@ -8,27 +8,74 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      const savedTheme = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        document.documentElement.classList.add('dark');
+      }
+      window.tailwind = window.tailwind || {};
+      window.tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#eef2ff',
+                100: '#e0e7ff',
+                200: '#c7d2fe',
+                500: '#6366f1',
+                600: '#4f46e5',
+                700: '#4338ca',
+              },
+            },
+            boxShadow: {
+              focus: '0 0 0 3px rgba(99, 102, 241, 0.35)',
+            },
+          },
+        },
+      };
+    </script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <link rel="stylesheet" href="/static/css/styles.css" />
   </head>
-  <body class="bg-slate-100 min-h-screen font-[Inter] text-slate-800">
-    <nav class="bg-white border-b border-slate-200">
+  <body class="bg-slate-100 dark:bg-slate-950 min-h-screen font-[Inter] text-slate-800 dark:text-slate-100 transition-colors">
+    <nav class="bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 backdrop-blur">
       <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <div class="text-2xl font-semibold text-indigo-600">{{ settings.app_name }}</div>
-        <div class="flex items-center gap-4 text-sm font-medium text-slate-600">
-          <a href="/" class="hover:text-indigo-600">Dashboard</a>
-          <a href="/what-if" class="hover:text-indigo-600">What If</a>
-          <a href="/settings" class="hover:text-indigo-600">Settings</a>
-          <a href="/debug" class="hover:text-indigo-600">Debug</a>
-          <a href="/docs" class="hover:text-indigo-600">API Docs</a>
+        <div class="text-2xl font-semibold text-brand-600 dark:text-brand-400">{{ settings.app_name }}</div>
+        <div class="flex items-center gap-4 text-sm font-medium text-slate-600 dark:text-slate-300">
+          <a href="/" class="hover:text-brand-600 dark:hover:text-brand-400">Dashboard</a>
+          <a href="/what-if" class="hover:text-brand-600 dark:hover:text-brand-400">What If</a>
+          <a href="/settings" class="hover:text-brand-600 dark:hover:text-brand-400">Settings</a>
+          <a href="/debug" class="hover:text-brand-600 dark:hover:text-brand-400">Debug</a>
+          <a href="/docs" class="hover:text-brand-600 dark:hover:text-brand-400">API Docs</a>
+          <button
+            id="theme-toggle"
+            type="button"
+            class="ml-2 inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+            aria-label="Toggle dark mode"
+          >
+            <span class="hidden dark:inline">🌙</span>
+            <span class="dark:hidden">☀️</span>
+            Theme
+          </button>
         </div>
       </div>
     </nav>
     <main class="max-w-6xl mx-auto px-6 py-10">
       {% block content %}{% endblock %}
     </main>
-    <footer class="max-w-6xl mx-auto px-6 py-6 text-sm text-slate-500">
+    <footer class="max-w-6xl mx-auto px-6 py-6 text-sm text-slate-500 dark:text-slate-400">
       &copy; {{ current_year }} Inbox Steward. Made with local AI magic.
     </footer>
+    <script>
+      const themeToggle = document.getElementById('theme-toggle');
+      if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+          const isDark = document.documentElement.classList.toggle('dark');
+          localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        });
+      }
+    </script>
   </body>
 </html>

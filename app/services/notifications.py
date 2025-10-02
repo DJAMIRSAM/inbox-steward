@@ -62,7 +62,10 @@ class HomeAssistantNotifier:
 
     async def send_test_notification(self) -> dict[str, str | int | bool]:
         if not self._enabled:
-            return {"ok": False, "error": "Home Assistant credentials not configured."}
+            return {
+                "ok": False,
+                "error": self._missing_credentials_message(),
+            }
         payload = {
             "title": "Inbox Steward connectivity test",
             "message": "This is a debug notification from Inbox Steward.",
@@ -78,7 +81,30 @@ class HomeAssistantNotifier:
             return {"ok": True, "status": response.status_code}
         except Exception as exc:  # noqa: BLE001
             logger.exception("Home Assistant test notification failed")
-            return {"ok": False, "error": str(exc)}
+            return {
+                "ok": False,
+                "error": f"{exc} (target: {self.mobile_target}, base: {self.base_url})",
+            }
+
+    async def check_status(self) -> dict[str, str | int | bool]:
+        if not self._enabled:
+            return {
+                "ok": False,
+                "error": self._missing_credentials_message(),
+            }
+        try:
+            response = await self._client.get(
+                f"{self.base_url}/api/",
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+            response.raise_for_status()
+            return {"ok": True, "status": response.status_code}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Home Assistant status check failed")
+            return {
+                "ok": False,
+                "error": f"{exc} (base: {self.base_url})",
+            }
 
     async def _send(self, event: str, payload: dict) -> None:
         try:
@@ -94,6 +120,17 @@ class HomeAssistantNotifier:
     @property
     def _enabled(self) -> bool:
         return bool(self.base_url and self.token and self.mobile_target)
+
+    def _missing_credentials_message(self) -> str:
+        missing = []
+        if not self.base_url:
+            missing.append("HOME_ASSISTANT_BASE_URL")
+        if not self.token:
+            missing.append("HOME_ASSISTANT_TOKEN")
+        if not self.mobile_target:
+            missing.append("HOME_ASSISTANT_MOBILE_TARGET")
+        joined = ", ".join(missing) if missing else "required Home Assistant settings"
+        return f"Missing {joined}."
 
 
 notifier = HomeAssistantNotifier()

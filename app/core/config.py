@@ -34,12 +34,21 @@ class Settings(BaseSettings):
     poll_interval_seconds: int = Field(120, env="POLL_INTERVAL_SECONDS")
     full_sort_interval_minutes: int = Field(180, env="FULL_SORT_INTERVAL_MINUTES")
 
-    ollama_model: str = Field("mistral", env="OLLAMA_MODEL")
-    ollama_endpoint: str = Field("http://ollama:11434", env="OLLAMA_ENDPOINT")
+    ollama_model: str = Field("gpt-oss:20b", env="OLLAMA_MODEL")
+    ollama_endpoint: str = Field("http://ollama.local:11434", env="OLLAMA_ENDPOINT")
 
-    ha_base_url: Optional[str] = Field(None, env="HOME_ASSISTANT_BASE_URL")
-    ha_token: Optional[str] = Field(None, env="HOME_ASSISTANT_TOKEN")
-    ha_mobile_target: Optional[str] = Field(None, env="HOME_ASSISTANT_MOBILE_TARGET")
+    ha_base_url: Optional[str] = Field(
+        "http://homeassistant.local:8123",
+        env=["HOME_ASSISTANT_BASE_URL", "HOME_ASSISTANT_URL", "HA_BASE_URL", "HASS_BASE_URL"],
+    )
+    ha_token: Optional[str] = Field(
+        None,
+        env=["HOME_ASSISTANT_TOKEN", "HOME_ASSISTANT_LONG_LIVED_TOKEN", "HA_TOKEN", "HASS_TOKEN"],
+    )
+    ha_mobile_target: Optional[str] = Field(
+        "notify.mobile_app",
+        env=["HOME_ASSISTANT_MOBILE_TARGET", "HOME_ASSISTANT_NOTIFY_TARGET", "HA_NOTIFY_TARGET"],
+    )
 
     web_admin_password: str = Field("change-me", env="WEB_ADMIN_PASSWORD")
     secret_key: str = Field("super-secret", env="SECRET_KEY")

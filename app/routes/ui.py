@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
@@ -36,7 +37,97 @@ def _format_time(value: datetime | None) -> str:
 
 
 def _empty_debug_results() -> dict[str, dict[str, object] | None]:
-    return {"email": None, "ollama": None, "home_assistant": None}
+    return {"email": None, "ollama": None, "home_assistant": None, "folders": None, "audit": None}
+
+
+def _service_overview() -> Dict[str, Dict[str, Any]]:
+    return {
+        "imap": {
+            "configured": all([settings.imap_host, settings.imap_username, settings.imap_password]),
+            "host": settings.imap_host,
+            "mailbox": settings.imap_mailbox,
+            "poll": settings.poll_interval_seconds,
+            "username": settings.imap_username,
+        },
+        "ollama": {
+            "configured": bool(settings.ollama_endpoint and settings.ollama_model),
+            "endpoint": settings.ollama_endpoint,
+            "model": settings.ollama_model,
+        },
+        "home_assistant": {
+            "configured": bool(settings.ha_base_url and settings.ha_token and settings.ha_mobile_target),
+            "base_url": settings.ha_base_url,
+            "target": settings.ha_mobile_target,
+        },
+        "database": {
+            "configured": bool(settings.database_url),
+            "url": settings.database_url,
+        },
+    }
+
+
+def _friendly_imap_error(exc: Exception) -> str:
+    message = str(exc)
+    if "NONAUTH" in message or "LOGIN failed" in message:
+        return "Authentication failed. Verify IMAP username, password, and app password permissions."
+    if "Timed out" in message or "timeout" in message.lower():
+        return f"Connection to {settings.imap_host}:{settings.imap_port} timed out."
+    return message
+
+
+def _summarize_body(body: str | None) -> str:
+    if not body:
+        return ""
+    snippet = " ".join(line.strip() for line in body.strip().splitlines() if line.strip())
+    return snippet[:240]
+
+
+async def _check_latest_email() -> dict[str, Any]:
+    try:
+        message = await asyncio.to_thread(email_client.fetch_latest_message)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Email connectivity check failed")
+        return {"ok": False, "error": _friendly_imap_error(exc)}
+    if not message:
+        return {"ok": False, "error": "No messages found in the mailbox."}
+    preview = _summarize_body(message.get("body"))
+    return {
+        "ok": True,
+        "message": {
+            "uid": message.get("uid"),
+            "subject": message.get("subject"),
+            "sender": message.get("sender"),
+            "received_at": message.get("received_at"),
+            "snippet": preview or "(no body content)",
+            "folder": message.get("folder"),
+        },
+    }
+
+
+async def _list_imap_folders() -> dict[str, Any]:
+    try:
+        folders: List[str] = await asyncio.to_thread(email_client.list_folders, True)
+        return {"ok": True, "folders": folders}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Folder listing failed")
+        return {"ok": False, "error": _friendly_imap_error(exc)}
+
+
+async def _check_ollama_ping() -> dict[str, Any]:
+    result = await classifier.ping()
+    if not result.get("ok"):
+        error = result.get("error", "Unknown Ollama error")
+        result = {
+            "ok": False,
+            "error": f"{error} (endpoint: {settings.ollama_endpoint})",
+        }
+    return result
+
+
+async def _check_home_assistant(send_notification: bool = False) -> dict[str, Any]:
+    if send_notification:
+        return await notifier.send_test_notification()
+    return await notifier.check_status()
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -88,7 +179,12 @@ async def run_full_sort(request: Request, templates: Jinja2Templates = Depends(g
 async def debug_tools(request: Request, templates: Jinja2Templates = Depends(get_templates)) -> HTMLResponse:
     return templates.TemplateResponse(
         "debug.html",
-        {"request": request, "results": _empty_debug_results(), "flash": None},
+        {
+            "request": request,
+            "results": _empty_debug_results(),
+            "flash": None,
+            "overview": _service_overview(),
+        },
     )
 
 
@@ -102,42 +198,44 @@ async def debug_tools_run(
     flash = None
 
     if action == "test_email":
-        try:
-            message = await asyncio.to_thread(email_client.fetch_latest_message)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Email connectivity check failed")
-            message = None
-            results["email"] = {"ok": False, "error": str(exc)}
+        result = await _check_latest_email()
+        results["email"] = result
+        if result.get("ok"):
+            message_info: Dict[str, Any] = result.get("message") or {}
+            sender = message_info.get("sender", "the latest sender")
+            flash = {
+                "status": "success",
+                "message": f"Fetched latest message from {sender}",
+            }
         else:
-            if message:
-                snippet = (message.get("body") or "").strip().splitlines()
-                preview = " ".join(line.strip() for line in snippet if line.strip())[:240]
-                results["email"] = {
-                    "ok": True,
-                    "message": {
-                        "uid": message.get("uid"),
-                        "subject": message.get("subject"),
-                        "sender": message.get("sender"),
-                        "received_at": message.get("received_at"),
-                        "snippet": preview,
-                    },
-                }
-                flash = {
-                    "status": "success",
-                    "message": f"Fetched latest message from {message.get('sender', 'unknown sender')}",
-                }
-            else:
-                results["email"] = {"ok": False, "error": "No messages found in the mailbox."}
-                flash = {"status": "info", "message": "Mailbox is empty or inaccessible."}
+            flash = {
+                "status": "error",
+                "message": result.get("error", "Unable to fetch email."),
+            }
+    elif action == "list_folders":
+        result = await _list_imap_folders()
+        results["folders"] = result
+        if result.get("ok"):
+            folders: List[str] = result.get("folders") or []
+            label = "folder" if len(folders) == 1 else "folders"
+            flash = {
+                "status": "success",
+                "message": f"Discovered {len(folders)} IMAP {label}.",
+            }
+        else:
+            flash = {
+                "status": "error",
+                "message": result.get("error", "Unable to list folders."),
+            }
     elif action == "test_ollama":
-        result = await classifier.ping()
+        result = await _check_ollama_ping()
         results["ollama"] = result
         if result.get("ok"):
             flash = {"status": "success", "message": "Ollama responded successfully."}
         else:
             flash = {"status": "error", "message": result.get("error", "Unknown Ollama error")}
     elif action == "test_home_assistant":
-        result = await notifier.send_test_notification()
+        result = await _check_home_assistant(send_notification=True)
         results["home_assistant"] = result
         if result.get("ok"):
             flash = {
@@ -149,10 +247,39 @@ async def debug_tools_run(
                 "status": "error",
                 "message": result.get("error", "Home Assistant notification failed."),
             }
+    elif action == "run_audit":
+        email_result = await _check_latest_email()
+        folder_result = await _list_imap_folders()
+        ollama_result = await _check_ollama_ping()
+        ha_result = await _check_home_assistant()
+        results.update(
+            {
+                "email": email_result,
+                "folders": folder_result,
+                "ollama": ollama_result,
+                "home_assistant": ha_result,
+                "audit": {
+                    "imap": email_result.get("ok", False),
+                    "folders": folder_result.get("ok", False),
+                    "ollama": ollama_result.get("ok", False),
+                    "home_assistant": ha_result.get("ok", False),
+                },
+            }
+        )
+        if all(item.get("ok") for item in [email_result, folder_result, ollama_result, ha_result]):
+            flash = {
+                "status": "success",
+                "message": "All connectivity checks passed. Inbox Steward is ready to run.",
+            }
+        else:
+            flash = {
+                "status": "error",
+                "message": "Connectivity audit completed with failures. See details below.",
+            }
     else:
         flash = {"status": "error", "message": "Unknown debug action."}
 
     return templates.TemplateResponse(
         "debug.html",
-        {"request": request, "results": results, "flash": flash},
+        {"request": request, "results": results, "flash": flash, "overview": _service_overview()},
     )

@@ -17,7 +17,7 @@ services:
       TIMEZONE: "${TIMEZONE:-America/Vancouver}"
       POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-120}"
       FULL_SORT_INTERVAL_MINUTES: "${FULL_SORT_INTERVAL_MINUTES:-180}"
-      OLLAMA_ENDPOINT: "${OLLAMA_ENDPOINT:-http://ollama.local/:11434}"
+      OLLAMA_ENDPOINT: "${OLLAMA_ENDPOINT:-http://ollama.local:11434}"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-gpt-oss:20b}"
       HOME_ASSISTANT_BASE_URL: "${HOME_ASSISTANT_BASE_URL:-http://homeassistant.local:8123}"
       HOME_ASSISTANT_TOKEN: "${HOME_ASSISTANT_TOKEN:-tokenhere}"
