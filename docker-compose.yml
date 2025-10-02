@@ -1,0 +1,59 @@
+version: "3.9"
+services:
+  app:
+    build: .
+    container_name: ai-email-sorter
+    restart: unless-stopped
+    environment:
+      APP_NAME: "Inbox Steward"
+      LOG_LEVEL: "INFO"
+      DATABASE_URL: "postgresql+psycopg2://email_sorter:email_sorter@db:5432/email_sorter"
+      IMAP_HOST: "imap.example.com"
+      IMAP_PORT: 993
+      IMAP_USERNAME: "user@example.com"
+      IMAP_PASSWORD: "changeme"
+      IMAP_MAILBOX: "INBOX"
+      TIMEZONE: "America/Vancouver"
+      POLL_INTERVAL_SECONDS: 120
+      FULL_SORT_INTERVAL_MINUTES: 180
+      OLLAMA_ENDPOINT: "http://ollama:11434"
+      OLLAMA_MODEL: "mistral"
+      HOME_ASSISTANT_BASE_URL: "http://homeassistant:8123"
+      HOME_ASSISTANT_TOKEN: ""
+      HOME_ASSISTANT_MOBILE_TARGET: "mobile_app_your_device"
+      PDF_TEMP_DIR: "/data/pdfs"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage/pdfs:/data/pdfs
+    depends_on:
+      - db
+    networks:
+      - ai-email-sorter
+
+  db:
+    image: postgres:15-alpine
+    container_name: ai-email-sorter-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: email_sorter
+      POSTGRES_PASSWORD: email_sorter
+      POSTGRES_DB: email_sorter
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - ai-email-sorter
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-email-sorter-redis
+    restart: unless-stopped
+    networks:
+      - ai-email-sorter
+
+networks:
+  ai-email-sorter:
+    driver: bridge
+
+volumes:
+  db-data:
