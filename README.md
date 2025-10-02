@@ -6,12 +6,12 @@ Inbox Steward keeps your inbox tidy with a local-first workflow that classifies 
 
 ## Features
 
-- **Local LLM classification** – Prompts a local Ollama model and repairs JSON output automatically. Includes deterministic fallbacks when the model is unreachable.
+- **Local LLM classification** – Prompts a local Ollama model and repairs JSON output automatically. The prompt now ships the live IMAP folder tree and historical hints on every call so the model can create or reuse folders confidently. Includes deterministic fallbacks when the model is unreachable.
 - **Smart foldering** – Enforces the provided naming rules, remembers past overrides through lightweight folder hints, and creates folders on demand when confidence is high.
 - **Sticky lane handling** – Flags actionable email and files it once you archive the thread.
 - **Calendar automation** – Creates, updates, and cancels events with deterministic UIDs, conflict detection, and a persisted registry for follow-ups.
 - **PDF understanding** – Extracts PDF text to improve filing accuracy and duplicate detection.
-- **What-if mode & undo** – Preview bulk actions and maintain an undo token history.
+- **What-if planner & undo** – Preview bulk actions with lane, move-now status, and confidence directly in the UI, then run a full sort without leaving the dashboard. Undo tokens remain available for every batch.
 - **Home Assistant notifications** – Decision requests, conflict alerts, and daily digests are routed through your HA mobile app target.
 - **Gorgeous admin UI** – Tailwind-powered dashboard with live stats, calendar history, and one-click full sort sweeps.
 
@@ -82,6 +82,13 @@ The FastAPI docs live at `http://localhost:${INBOX_STEWARD_PORT:-8000}/docs`. Th
 - Needs-decision queue (sticky lane items)
 - Recent calendar entries with location/notes
 - Conflict inspector and manual full-sort trigger
+
+### What-if planner
+
+- Visit `/what-if` to see the latest dry-run plan, including each message's lane, destination, flag status, and confidence.
+- Use **Refresh preview** to request a new plan without leaving the page.
+- When you're satisfied, hit **Run full sort** to apply the moves without getting bounced to a raw JSON response.
+- A toast confirms how many messages were filed, and the table updates automatically.
 
 ## Home Assistant notification setup
 

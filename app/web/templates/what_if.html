@@ -3,13 +3,22 @@
 <section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
   <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-semibold text-slate-900">What if mode</h1>
-      <p class="text-sm text-slate-500 mt-2">Dry-run of planned moves with their confidence levels. Approve before executing.</p>
+      <h1 class="text-2xl font-semibold text-slate-900">What-if planner</h1>
+      <p class="text-sm text-slate-500 mt-2">Preview the lane, destination, and confidence for every pending message before applying the moves.</p>
     </div>
-    <form method="post" action="/api/full-sort">
-      <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm">Run full sort</button>
-    </form>
+    <div class="flex gap-3">
+      <a href="/what-if" class="px-4 py-2 bg-white border border-slate-200 hover:border-indigo-300 text-slate-700 rounded-xl shadow-sm">Refresh preview</a>
+      <form method="post" action="/what-if/full-sort">
+        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm">Run full sort</button>
+      </form>
+    </div>
   </div>
+
+  {% if flash %}
+  <div class="mt-6 px-4 py-3 rounded-xl border {{ 'border-green-200 bg-green-50 text-green-700' if flash.status == 'success' else 'border-slate-200 bg-slate-50 text-slate-600' }}">
+    {{ flash.message }}
+  </div>
+  {% endif %}
 
   <div class="mt-6">
     <div class="flex items-center justify-between text-sm text-slate-500">
@@ -22,7 +31,9 @@
           <tr>
             <th class="px-4 py-3 text-left">UID</th>
             <th class="px-4 py-3 text-left">Subject</th>
+            <th class="px-4 py-3 text-left">Lane</th>
             <th class="px-4 py-3 text-left">Destination</th>
+            <th class="px-4 py-3 text-left">Action</th>
             <th class="px-4 py-3 text-left">Confidence</th>
           </tr>
         </thead>
@@ -31,7 +42,27 @@
           <tr class="hover:bg-indigo-50">
             <td class="px-4 py-3 font-mono text-xs">{{ item.uid }}</td>
             <td class="px-4 py-3 text-slate-700">{{ item.subject }}</td>
+            <td class="px-4 py-3">
+              {% set lane = item.lane %}
+              {% if lane == 'quick' %}
+              {% set lane_classes = 'bg-emerald-100 text-emerald-700' %}
+              {% elif lane == 'sticky' %}
+              {% set lane_classes = 'bg-amber-100 text-amber-700' %}
+              {% else %}
+              {% set lane_classes = 'bg-slate-200 text-slate-700' %}
+              {% endif %}
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {{ lane_classes }}">{{ lane|capitalize }}</span>
+            </td>
             <td class="px-4 py-3 text-indigo-600">{{ item.destination }}</td>
+            <td class="px-4 py-3 text-slate-600">
+              {% if item.move_now %}
+              <span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Move immediately</span>
+              {% elif item.flag %}
+              <span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Stay flagged until archived</span>
+              {% else %}
+              <span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-slate-400"></span>Awaiting action</span>
+              {% endif %}
+            </td>
             <td class="px-4 py-3">
               <span class="inline-flex items-center gap-2">
                 <span class="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">

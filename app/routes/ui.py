@@ -57,4 +57,17 @@ async def settings_page(request: Request, templates: Jinja2Templates = Depends(g
 @router.get("/what-if", response_class=HTMLResponse)
 async def what_if_page(request: Request, templates: Jinja2Templates = Depends(get_templates)) -> HTMLResponse:
     plan = processor.what_if()
-    return templates.TemplateResponse("what_if.html", {"request": request, "plan": plan})
+    return templates.TemplateResponse("what_if.html", {"request": request, "plan": plan, "flash": None})
+
+
+@router.post("/what-if/full-sort", response_class=HTMLResponse)
+async def run_full_sort(request: Request, templates: Jinja2Templates = Depends(get_templates)) -> HTMLResponse:
+    result = processor.full_sort()
+    moved = sum(len(uids) for uids in result.get("moves", {}).values())
+    plan = processor.what_if()
+    if moved:
+        message = f"Filed {moved} message{'s' if moved != 1 else ''} using the latest plan."
+        flash = {"status": "success", "message": message}
+    else:
+        flash = {"status": "info", "message": "No messages required moving. Inbox is already in harmony."}
+    return templates.TemplateResponse("what_if.html", {"request": request, "plan": plan, "flash": flash})

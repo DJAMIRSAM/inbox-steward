@@ -3,6 +3,7 @@ from __future__ import annotations
 import email
 import logging
 import re
+import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from email.header import decode_header, make_header
@@ -21,6 +22,7 @@ class EmailClient:
 
     def __init__(self) -> None:
         self._client: Optional[IMAPClient] = None
+        self._folder_cache: Optional[tuple[float, List[str]]] = None
 
     def connect(self) -> IMAPClient:
         if self._client is None:
@@ -74,6 +76,17 @@ class EmailClient:
                 logger.info("Creating folder %s", subfolder)
                 client.create_folder(subfolder)
                 existing.add(subfolder)
+        self._folder_cache = None
+
+    def list_folders(self, refresh: bool = False) -> List[str]:
+        if self._folder_cache and not refresh:
+            timestamp, cached = self._folder_cache
+            if time.monotonic() - timestamp < 300:
+                return cached
+        client = self.connect()
+        folders = sorted(item[2] for item in client.list_folders())
+        self._folder_cache = (time.monotonic(), folders)
+        return folders
 
     def _parse_message(self, uid: int, message: Message, metadata: Dict[bytes, Any]) -> Dict[str, Any]:
         subject = self._decode(message.get("Subject", ""))

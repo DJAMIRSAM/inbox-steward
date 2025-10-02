@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Optional
 
 from sqlmodel import select
 
@@ -52,7 +52,18 @@ class ActionProcessor:
                 select(FolderHint).where(FolderHint.hint == message.get("sender", ""))
             ).all()
         hint_payload = {hint.hint: hint.folder for hint in hints}
-        return {**message, "hints": hint_payload}
+        try:
+            existing_folders = email_client.list_folders()
+        except Exception:  # noqa: BLE001
+            logger.exception("Unable to fetch folder list from IMAP")
+            existing_folders = []
+        return {
+            **message,
+            "hints": hint_payload,
+            "existing_folders": existing_folders,
+            "timezone": settings.timezone,
+            "current_folder": message.get("folder", settings.imap_mailbox),
+        }
 
     def _persist_email(self, message: Dict[str, Any], classification: Dict[str, Any], session_id: str) -> None:
         with get_session() as session:
@@ -78,13 +89,14 @@ class ActionProcessor:
             db_obj.updated_at = datetime.now(UTC)
             db_obj.folder = message.get("folder", settings.imap_mailbox)
             meta = classification.get("meta") or {}
-            db_obj.needs_decision = bool(meta.get("needs_decision"))
+            review = classification.get("review") or {}
+            action = self._extract_email_action(classification)
+            low_confidence = bool(action) and (action.get("confidence") or 0.0) < 0.4
+            db_obj.needs_decision = bool(review.get("needs_decision")) or low_confidence
             db_obj.session_id = session_id
             target_folder = None
-            for action in classification.get("email_actions", []):
-                if action.get("uid") == message.get("uid"):
-                    target_folder = self.folder_namer.normalize(action.get("destination", ""))
-                    break
+            if action and action.get("folder_path"):
+                target_folder = action.get("folder_path")
             db_obj.target_folder = target_folder
             session.add(db_obj)
             session.commit()
@@ -92,57 +104,84 @@ class ActionProcessor:
     async def _apply_actions(
         self, message: Dict[str, Any], classification: Dict[str, Any], session_id: str
     ) -> None:
-        actions = classification.get("email_actions", [])
-        review = set(classification.get("review", []) or [])
-        archive = set(classification.get("archive", []) or [])
+        action = self._extract_email_action(classification)
+        review = classification.get("review") or {}
+        archive = classification.get("archive") or {}
         meta = classification.get("meta") or {}
-        sticky_targets: List[Tuple[str, Dict[str, Any]]] = []
-        for action in actions:
-            destination = self.folder_namer.normalize(action.get("destination", ""))
-            confidence = float(action.get("confidence", 0))
-            uid = action.get("uid")
-            if not uid:
-                continue
-            if confidence < 0.4:
-                undo_token = self._ensure_undo_token(session_id)
-                await notifier.send_decision_request(
-                    message,
-                    reason="Low confidence folder",
-                    safe_default="Stick with Inbox",
-                    undo_token=undo_token,
-                )
-                self._log_action(session_id, uid, "decision_request", action)
-                continue
-            if action.get("sticky"):
-                sticky_targets.append((uid, action))
-                email_client.flag(uid)
-            else:
-                email_client.unflag(uid)
-                email_client.move(uid, destination)
-                self._persist_folder_hint(message, destination, confidence)
-                log_payload = {**action, "source": message.get("folder", settings.imap_mailbox)}
-                self._log_action(session_id, uid, "move", log_payload)
-            if uid in archive:
-                email_client.move(uid, destination)
-        if meta.get("needs_decision") and sticky_targets:
+        if action:
+            await self._execute_email_action(message, action, session_id, meta)
+        if review.get("needs_decision"):
+            undo_token = self._ensure_undo_token(session_id)
+            options = review.get("options") or []
+            safe_default = options[0] if options else "Keep in Inbox"
+            reason = review.get("reason") or "Needs your decision"
+            await notifier.send_decision_request(
+                message,
+                reason=reason,
+                safe_default=safe_default,
+                undo_token=undo_token,
+            )
+            self._log_action(
+                session_id,
+                message.get("uid", ""),
+                "decision_request",
+                {"reason": reason, "options": options, "proposed_name": review.get("proposed_name")},
+            )
+        if archive:
+            self._log_action(session_id, message.get("uid", ""), "archive", archive)
+        if meta:
+            self._log_action(session_id, message.get("uid", ""), "meta", meta)
+        await self._handle_calendar(classification.get("calendar"), message, session_id)
+
+    async def _handle_calendar(
+        self, calendar_payload: Dict[str, Any] | None, message: Dict[str, Any], session_id: str
+    ) -> None:
+        if not isinstance(calendar_payload, dict) or not calendar_payload:
+            return
+        confidence = float(calendar_payload.get("confidence") or 0.0)
+        if confidence and confidence < 0.4:
             undo_token = self._ensure_undo_token(session_id)
             await notifier.send_decision_request(
                 message,
-                reason=meta.get("reason", "Needs review"),
-                safe_default="Keep flagged",
+                reason="Calendar action below confidence threshold",
+                safe_default="Skip calendar update",
                 undo_token=undo_token,
             )
-        await self._handle_calendar(classification.get("calendar", []), session_id)
-        if review:
-            undo_token = self._ensure_undo_token(session_id)
-            await notifier.send_digest(review, session_id, undo_token)
-
-    async def _handle_calendar(self, calendar_actions: Iterable[Dict[str, Any]], session_id: str) -> None:
-        for action in calendar_actions:
-            result = self.calendar_service.apply(action)
-            self._log_action(session_id, action.get("uid", ""), "calendar", result)
-            if result.get("conflict"):
-                await notifier.send_conflict(result)
+            self._log_action(
+                session_id,
+                message.get("uid", ""),
+                "calendar_pending",
+                {"confidence": confidence, "payload": calendar_payload},
+            )
+            return
+        action_type = calendar_payload.get("action")
+        if not action_type:
+            if calendar_payload.get("cancel"):
+                action_type = "cancel"
+            elif calendar_payload.get("create", True):
+                action_type = "create"
+            else:
+                action_type = "update"
+        payload = {
+            "action": action_type,
+            "thread_id": message.get("thread_id"),
+            "provider": message.get("sender"),
+            "title": calendar_payload.get("title"),
+            "calendar": calendar_payload.get("target_calendar_hint", CalendarService.HOME),
+            "starts_at": calendar_payload.get("start"),
+            "ends_at": calendar_payload.get("end"),
+            "timezone": calendar_payload.get("timezone", settings.timezone),
+            "location": calendar_payload.get("location"),
+            "url": calendar_payload.get("url"),
+            "notes": calendar_payload.get("notes"),
+            "uid": calendar_payload.get("uid"),
+        }
+        result = self.calendar_service.apply(payload)
+        combined_payload = {**payload, **result}
+        self._log_action(session_id, message.get("uid", ""), "calendar", combined_payload)
+        conflict = result.get("conflict")
+        if conflict:
+            await notifier.send_conflict(conflict)
 
     def _persist_folder_hint(self, message: Dict[str, Any], folder: str, confidence: float) -> None:
         hint_key = message.get("sender", "")
@@ -180,10 +219,23 @@ class ActionProcessor:
         plan = defaultdict(list)
         for email_obj in emails:
             classification = email_obj.classification or {}
-            for action in classification.get("email_actions", []):
-                destination = self.folder_namer.normalize(action.get("destination", ""))
-                plan[destination].append(email_obj.uid)
-                email_client.move(email_obj.uid, destination)
+            action = self._extract_email_action(classification)
+            if not action:
+                continue
+            destination = action.get("folder_path")
+            if not destination or action.get("lane") == "ignore":
+                continue
+            if action.get("lane") == "sticky" and not action.get("move_now"):
+                continue
+            email_client.ensure_folder(destination)
+            email_client.move(email_obj.uid, destination)
+            email_client.unflag(email_obj.uid)
+            self._persist_folder_hint(
+                {"sender": email_obj.sender, "folder": email_obj.folder},
+                destination,
+                action.get("confidence") or 0.0,
+            )
+            plan[destination].append(email_obj.uid)
         return {"moves": dict(plan)}
 
     def what_if(self) -> Dict[str, Any]:
@@ -193,16 +245,21 @@ class ActionProcessor:
         plan = []
         for email_obj in emails:
             classification = email_obj.classification or {}
-            actions = classification.get("email_actions", [])
-            for action in actions:
-                plan.append(
-                    {
-                        "uid": email_obj.uid,
-                        "subject": email_obj.subject,
-                        "destination": self.folder_namer.normalize(action.get("destination", "")),
-                        "confidence": action.get("confidence"),
-                    }
-                )
+            action = self._extract_email_action(classification)
+            if not action or not action.get("folder_path"):
+                continue
+            plan.append(
+                {
+                    "uid": email_obj.uid,
+                    "subject": email_obj.subject,
+                    "destination": action.get("folder_path"),
+                    "lane": action.get("lane") or "unknown",
+                    "move_now": action.get("move_now"),
+                    "flag": action.get("flag"),
+                    "confidence": action.get("confidence"),
+                }
+            )
+        plan.sort(key=lambda item: (item["lane"] or "", item["uid"]))
         return {"plan": plan, "count": len(plan)}
 
     def undo(self, token: str) -> bool:
@@ -233,6 +290,101 @@ class ActionProcessor:
             session.add(undo_token)
             session.commit()
             return token_value
+
+    def _extract_email_action(self, classification: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        action = classification.get("email_actions")
+        if isinstance(action, list):
+            action = action[0] if action else None
+        if not isinstance(action, dict) or not action:
+            return None
+        folder_path_raw = action.get("folder_path") or ""
+        folder_path = self.folder_namer.normalize(folder_path_raw) if folder_path_raw else None
+        confidence = action.get("confidence")
+        try:
+            confidence_value = float(confidence) if confidence is not None else 0.0
+        except (TypeError, ValueError):
+            confidence_value = 0.0
+        return {
+            "lane": action.get("lane", "ignore"),
+            "folder_path": folder_path,
+            "raw_folder_path": folder_path_raw,
+            "new_folder": bool(action.get("new_folder")),
+            "create_folder": bool(action.get("create_folder")),
+            "move_now": bool(action.get("move_now")),
+            "flag": bool(action.get("flag")),
+            "confidence": confidence_value,
+            "due_date": action.get("due_date"),
+            "snooze_until": action.get("snooze_until"),
+        }
+
+    async def _execute_email_action(
+        self, message: Dict[str, Any], action: Dict[str, Any], session_id: str, meta: Dict[str, Any]
+    ) -> None:
+        uid = message.get("uid")
+        if not uid:
+            return
+        lane = action.get("lane") or "ignore"
+        destination = action.get("folder_path")
+        confidence = action.get("confidence") or 0.0
+        if lane == "ignore":
+            logger.debug("Skipping ignore lane for %s", uid)
+            return
+        if confidence < 0.4:
+            undo_token = self._ensure_undo_token(session_id)
+            await notifier.send_decision_request(
+                message,
+                reason="Low confidence folder selection",
+                safe_default="Leave in Inbox",
+                undo_token=undo_token,
+            )
+            self._log_action(
+                session_id,
+                uid,
+                "decision_request",
+                {"reason": "low_confidence", "confidence": confidence, "destination": destination},
+            )
+            return
+        if not destination:
+            logger.warning("No destination folder provided for %s", uid)
+            return
+        if action.get("new_folder") or action.get("create_folder"):
+            email_client.ensure_folder(destination)
+        moved = False
+        if lane == "sticky":
+            if action.get("flag", True):
+                email_client.flag(uid)
+            else:
+                email_client.unflag(uid)
+            if action.get("move_now"):
+                email_client.ensure_folder(destination)
+                email_client.move(uid, destination)
+                moved = True
+        else:
+            if action.get("flag"):
+                email_client.flag(uid)
+            else:
+                email_client.unflag(uid)
+            if action.get("move_now"):
+                email_client.ensure_folder(destination)
+                email_client.move(uid, destination)
+                moved = True
+        log_payload = {
+            "lane": lane,
+            "destination": destination,
+            "move_now": action.get("move_now"),
+            "flag": action.get("flag"),
+            "confidence": confidence,
+            "meta": meta,
+            "source": message.get("folder", settings.imap_mailbox),
+        }
+        if action.get("due_date"):
+            log_payload["due_date"] = action.get("due_date")
+        if action.get("snooze_until"):
+            log_payload["snooze_until"] = action.get("snooze_until")
+        action_type = "move" if moved else "plan"
+        self._log_action(session_id, uid, action_type, log_payload)
+        if moved:
+            self._persist_folder_hint(message, destination, confidence)
 
 
 processor = ActionProcessor()
