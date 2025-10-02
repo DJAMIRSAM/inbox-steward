@@ -31,6 +31,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("IMAP_ENCRYPTION", "IMAP_SECURITY", "IMAP_USE_SSL"),
         description="IMAP transport security mode: SSL, STARTTLS, or NONE",
     )
+    imap_auth_type: str = Field(
+        "LOGIN",
+        validation_alias=AliasChoices("IMAP_AUTH_TYPE", "IMAP_AUTH_METHOD", "IMAP_AUTH"),
+        description="IMAP authentication mechanism: LOGIN or XOAUTH2",
+    )
+    imap_oauth2_token: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices("IMAP_OAUTH2_TOKEN", "IMAP_OAUTH_TOKEN", "IMAP_AUTH_TOKEN"),
+        description="Bearer token for XOAUTH2 authentication",
+    )
     imap_mailbox: str = Field("INBOX", env="IMAP_MAILBOX")
 
     timezone: str = Field("America/Vancouver", env="TIMEZONE")
@@ -103,6 +113,26 @@ class Settings(BaseSettings):
             return "NONE"
 
         raise ValueError("IMAP_ENCRYPTION must be one of: SSL, STARTTLS, NONE")
+
+    @validator("imap_auth_type", pre=True)
+    def _normalize_imap_auth_type(cls, value: str | None) -> str:
+        if value in (None, ""):
+            return "LOGIN"
+
+        normalized = str(value).strip().upper().replace("-", "_")
+        if normalized in {"LOGIN", "PLAIN", "AUTHLOGIN", "BASIC"}:
+            return "LOGIN"
+        if normalized in {"XOAUTH2", "OAUTH2"}:
+            return "XOAUTH2"
+
+        raise ValueError("IMAP_AUTH_TYPE must be LOGIN or XOAUTH2")
+
+    @validator("imap_oauth2_token", pre=True)
+    def _normalize_imap_oauth2_token(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
 
 @lru_cache()

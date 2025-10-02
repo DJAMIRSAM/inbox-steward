@@ -109,11 +109,19 @@ DEBUG_PROGRESS_STEPS: Dict[str, Dict[str, Any]] = {
 def _service_overview() -> Dict[str, Dict[str, Any]]:
     return {
         "imap": {
-            "configured": all([settings.imap_host, settings.imap_username, settings.imap_password]),
+            "configured": bool(
+                settings.imap_host
+                and settings.imap_username
+                and (
+                    (settings.imap_auth_type == "XOAUTH2" and settings.imap_oauth2_token)
+                    or (settings.imap_auth_type != "XOAUTH2" and settings.imap_password)
+                )
+            ),
             "host": settings.imap_host,
             "mailbox": settings.imap_mailbox,
             "poll": settings.poll_interval_seconds,
             "username": settings.imap_username,
+            "auth": settings.imap_auth_type,
         },
         "ollama": {
             "configured": bool(settings.ollama_endpoint and settings.ollama_model),

@@ -50,7 +50,9 @@
               <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
               {% endif %}
             </div>
-            <div class="text-xs text-slate-500 dark:text-slate-400">{{ overview.imap.username }} &middot; poll {{ overview.imap.poll }}s</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">
+              {{ overview.imap.username }} &middot; {{ overview.imap.auth }} &middot; poll {{ overview.imap.poll }}s
+            </div>
           </dd>
         </div>
         <div class="flex items-center justify-between gap-3">
@@ -255,6 +257,10 @@
           <div class="flex items-center justify-between gap-3">
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Server</dt>
             <dd class="font-medium text-slate-700 dark:text-slate-100">{{ imap.server }} · {{ imap.encryption }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Authentication</dt>
+            <dd>{{ imap.auth_type }}</dd>
           </div>
           <div class="flex items-center justify-between gap-3">
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">State</dt>

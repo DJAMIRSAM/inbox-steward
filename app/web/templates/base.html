@@ -66,11 +66,18 @@
       <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <div class="text-2xl font-semibold text-brand-600 dark:text-brand-400">{{ settings.app_name }}</div>
         <div class="flex items-center gap-4 text-sm font-medium text-slate-600 dark:text-slate-300">
-          <a href="/" class="hover:text-brand-600 dark:hover:text-brand-400">Dashboard</a>
-          <a href="/what-if" class="hover:text-brand-600 dark:hover:text-brand-400">What If</a>
-          <a href="/settings" class="hover:text-brand-600 dark:hover:text-brand-400">Settings</a>
-          <a href="/debug" class="hover:text-brand-600 dark:hover:text-brand-400">Debug</a>
-          <a href="/docs" class="hover:text-brand-600 dark:hover:text-brand-400">API Docs</a>
+          <a href="/" data-nav-index="0" class="hover:text-brand-600 dark:hover:text-brand-400">Dashboard</a>
+          <a href="/what-if" data-nav-index="1" class="hover:text-brand-600 dark:hover:text-brand-400">What If</a>
+          <a href="/settings" data-nav-index="2" class="hover:text-brand-600 dark:hover:text-brand-400">Settings</a>
+          <a href="/debug" data-nav-index="3" class="hover:text-brand-600 dark:hover:text-brand-400">Debug</a>
+          <a
+            href="/docs"
+            data-nav-index="4"
+            class="hover:text-brand-600 dark:hover:text-brand-400"
+            target="_blank"
+            rel="noopener noreferrer"
+            >API Docs</a
+          >
           <button
             id="theme-toggle"
             type="button"
@@ -118,18 +125,40 @@
       const applyPageEnter = () => {
         const main = document.querySelector('main');
         if (!main) return;
-        main.classList.add('page-enter');
-        main.addEventListener('animationend', () => {
-          main.classList.remove('page-enter');
-        }, { once: true });
+        const direction = sessionStorage.getItem('page-transition-direction');
+        sessionStorage.removeItem('page-transition-direction');
+        const enterClass =
+          direction === 'left'
+            ? 'page-enter-left'
+            : direction === 'right'
+            ? 'page-enter-right'
+            : 'page-enter-neutral';
+        main.classList.add(enterClass);
+        main.addEventListener(
+          'animationend',
+          () => {
+            main.classList.remove('page-enter-left', 'page-enter-right', 'page-enter-neutral');
+          },
+          { once: true },
+        );
       };
 
       document.addEventListener('DOMContentLoaded', applyPageEnter);
 
-      const navLinks = document.querySelectorAll('nav a[href^="/"]');
+      const navLinks = Array.from(document.querySelectorAll('nav a[data-nav-index]'));
+      const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+      const resolveIndex = (link) => {
+        const value = link.getAttribute('data-nav-index');
+        return value !== null ? Number.parseInt(value, 10) : 0;
+      };
+      const currentIndex = navLinks.findIndex((link) => link.getAttribute('href') === currentPath);
+
       navLinks.forEach((link) => {
         link.addEventListener('click', (event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+          }
+          if (link.target === '_blank') {
             return;
           }
           const main = document.querySelector('main');
@@ -139,8 +168,14 @@
           if (link.getAttribute('href') === window.location.pathname) {
             return;
           }
+          const targetIndex = resolveIndex(link);
+          if (currentIndex === -1 || Number.isNaN(targetIndex) || targetIndex === currentIndex) {
+            return;
+          }
           event.preventDefault();
-          main.classList.add('page-exit');
+          const direction = targetIndex < currentIndex ? 'left' : 'right';
+          sessionStorage.setItem('page-transition-direction', direction);
+          main.classList.add(direction === 'left' ? 'page-exit-left' : 'page-exit-right');
           setTimeout(() => {
             window.location.href = link.href;
           }, 200);

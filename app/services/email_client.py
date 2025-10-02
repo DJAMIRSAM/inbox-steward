@@ -28,7 +28,10 @@ class EmailClient:
     def connect(self) -> IMAPClient:
         if self._client is None:
             logger.info(
-                "Connecting to IMAP %s using %s", settings.imap_host, settings.imap_encryption
+                "Connecting to IMAP %s using %s (%s auth)",
+                settings.imap_host,
+                settings.imap_encryption,
+                settings.imap_auth_type,
             )
             use_ssl = settings.imap_encryption == "SSL"
             client = IMAPClient(
@@ -51,7 +54,15 @@ class EmailClient:
                     self._client = None
                     raise
             try:
-                client.login(settings.imap_username, settings.imap_password)
+                if settings.imap_auth_type == "XOAUTH2":
+                    token = settings.imap_oauth2_token
+                    if not token:
+                        raise ValueError(
+                            "IMAP_OAUTH2_TOKEN must be configured when IMAP_AUTH_TYPE=XOAUTH2"
+                        )
+                    client.oauth2_login(settings.imap_username, token)
+                else:
+                    client.login(settings.imap_username, settings.imap_password)
             except Exception:  # noqa: BLE001
                 logger.exception("IMAP login failed")
                 try:
@@ -181,6 +192,7 @@ class EmailClient:
             "selected_folder": selected_folder,
             "server": f"{settings.imap_host}:{settings.imap_port}",
             "encryption": settings.imap_encryption,
+            "auth_type": settings.imap_auth_type,
             "ssl": settings.imap_encryption == "SSL",
             "mailbox": settings.imap_mailbox,
             "mailbox_status": mailbox_status,
