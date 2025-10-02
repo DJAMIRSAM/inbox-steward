@@ -40,13 +40,14 @@ Primary components:
 1. Copy `.env.example` to `.env` and fill in your mail + Home Assistant credentials.
 2. Review `docker-compose.yml` and update IMAP, Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI.
 3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8000}` by default.
-4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see [Continuous image builds](#continuous-image-builds)).
+4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see Continuous image builds).
+
 
 ### Portainer deployment
 
 1. Open Portainer and create a new stack named **inbox-steward**.
 2. Paste the contents of [`docker-compose.yml`](docker-compose.yml) into the editor.
-3. In the *Environment variables* section add secrets for:
+3. In the Environment variables section add secrets for:
    - `IMAP_USERNAME`
    - `IMAP_PASSWORD`
    - `HOME_ASSISTANT_TOKEN`
@@ -54,6 +55,7 @@ Primary components:
 5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
 6. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
 7. (Optional) To use the prebuilt image, update the stack so the app service references `ghcr.io/djamirsam/inbox-steward:latest` instead of building locally. The GitHub Action below keeps that tag fresh after every merge.
+
 
 ### Manual Docker CLI deployment
 
