@@ -1,5 +1,7 @@
 # Inbox Steward
 
+[![Build Docker image](https://github.com/DJAMIRSAM/inbox-steward/actions/workflows/docker-image.yml/badge.svg)](https://github.com/DJAMIRSAM/inbox-steward/actions/workflows/docker-image.yml)
+
 Inbox Steward keeps your inbox tidy with a local-first workflow that classifies new mail, files it into a human-friendly folder tree, manages sticky follow-up items, and creates calendar events when it spots real-world appointments. A modern FastAPI web UI exposes live status, configuration details, and a What-if dry run so you can preview actions before committing. Notifications are delivered through Home Assistant to your mobile devices.
 
 ## Features
