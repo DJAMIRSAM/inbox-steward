@@ -1,0 +1,7 @@
+:root {
+  color-scheme: light;
+}
+
+a {
+  transition: color 0.2s ease;
+}
