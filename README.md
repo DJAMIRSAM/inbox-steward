@@ -38,19 +38,24 @@ Primary components:
 ## Getting started
 
 1. Copy `.env.example` to `.env` and fill in your mail + Home Assistant credentials.
-2. Review `docker-compose.yml` and update IMAP, Home Assistant, and Ollama settings as needed.
-3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:8000` by default.
+2. Review `docker-compose.yml` and update IMAP, Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI.
+3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8000}` by default.
+4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see Continuous image builds).
+
 
 ### Portainer deployment
 
 1. Open Portainer and create a new stack named **inbox-steward**.
 2. Paste the contents of [`docker-compose.yml`](docker-compose.yml) into the editor.
-3. In the *Environment variables* section add secrets for:
+3. In the Environment variables section add secrets for:
    - `IMAP_USERNAME`
    - `IMAP_PASSWORD`
    - `HOME_ASSISTANT_TOKEN`
-4. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
-5. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
+4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8000 is already in use. Portainer will publish the UI on that port.
+5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
+6. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
+7. (Optional) To use the prebuilt image, update the stack so the app service references `ghcr.io/djamirsam/inbox-steward:latest` instead of building locally. The GitHub Action below keeps that tag fresh after every merge.
+
 
 ### Manual Docker CLI deployment
 
@@ -63,7 +68,14 @@ mkdir -p storage/pdfs
 sudo docker compose up -d --build
 ```
 
-The FastAPI docs live at `http://localhost:8000/docs`. The dashboard gives you:
+To pull the prebuilt image instead of building locally:
+
+```bash
+sudo docker compose pull app
+sudo docker compose up -d
+```
+
+The FastAPI docs live at `http://localhost:${INBOX_STEWARD_PORT:-8000}/docs`. The dashboard gives you:
 
 - Pending automations count
 - Needs-decision queue (sticky lane items)
@@ -113,3 +125,12 @@ Integrate with your mail provider by granting IMAP access. The assistant inspect
 - Timezone defaults to America/Vancouver and uses UTC storage for safety.
 
 Enjoy your calm inbox! ✉️
+
+## Continuous image builds
+
+This repository publishes Docker images to [GitHub Container Registry](https://ghcr.io) on every pull request and push to `main`.
+
+- Pull request builds are tagged as `ghcr.io/djamirsam/inbox-steward:pr-<PR_NUMBER>` so reviewers can deploy the exact changes under test.
+- Merged changes are tagged as `ghcr.io/djamirsam/inbox-steward:latest` for production use.
+
+The workflow lives in [`.github/workflows/docker-image.yml`](.github/workflows/docker-image.yml). It runs the same build as `docker compose build` and pushes when the source branch is inside this repository. Forked pull requests still run the build for validation but skip the push.

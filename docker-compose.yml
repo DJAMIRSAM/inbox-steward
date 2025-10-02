@@ -23,7 +23,7 @@ services:
       HOME_ASSISTANT_MOBILE_TARGET: "mobile_app_your_device"
       PDF_TEMP_DIR: "/data/pdfs"
     ports:
-      - "8000:8000"
+      - "${INBOX_STEWARD_PORT:-8000}:8000"
     volumes:
       - ./storage/pdfs:/data/pdfs
     depends_on:
