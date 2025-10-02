@@ -28,4 +28,4 @@ def configure_logging(level: str = "INFO") -> None:
     )
 
 
-logger = logging.getLogger("ai_email_sorter")
+logger = logging.getLogger("inbox_steward")

@@ -1,4 +1,4 @@
-# Inbox Steward – AI Email Sorter
+# Inbox Steward
 
 Inbox Steward keeps your inbox tidy with a local-first workflow that classifies new mail, files it into a human-friendly folder tree, manages sticky follow-up items, and creates calendar events when it spots real-world appointments. A modern FastAPI web UI exposes live status, configuration details, and a What-if dry run so you can preview actions before committing. Notifications are delivered through Home Assistant to your mobile devices.
 
@@ -49,14 +49,14 @@ Primary components:
    - `IMAP_USERNAME`
    - `IMAP_PASSWORD`
    - `HOME_ASSISTANT_TOKEN`
-4. Deploy the stack. Portainer will start three containers: `ai-email-sorter`, `ai-email-sorter-db`, and `ai-email-sorter-redis`.
+4. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
 5. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
 
 ### Manual Docker CLI deployment
 
 ```bash
-git clone https://github.com/your-org/AI-Email-Sorter.git
-cd AI-Email-Sorter
+git clone https://github.com/DJAMIRSAM/Inbox-Steward.git
+cd Inbox-Steward
 cp .env.example .env
 # edit .env
 mkdir -p storage/pdfs

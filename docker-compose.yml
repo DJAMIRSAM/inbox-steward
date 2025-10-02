@@ -2,12 +2,12 @@ version: "3.9"
 services:
   app:
     build: .
-    container_name: ai-email-sorter
+    container_name: inbox-steward
     restart: unless-stopped
     environment:
       APP_NAME: "Inbox Steward"
       LOG_LEVEL: "INFO"
-      DATABASE_URL: "postgresql+psycopg2://email_sorter:email_sorter@db:5432/email_sorter"
+      DATABASE_URL: "postgresql+psycopg2://inbox_steward:inbox_steward@db:5432/inbox_steward"
       IMAP_HOST: "imap.example.com"
       IMAP_PORT: 993
       IMAP_USERNAME: "user@example.com"
@@ -29,30 +29,30 @@ services:
     depends_on:
       - db
     networks:
-      - ai-email-sorter
+      - inbox-steward
 
   db:
     image: postgres:15-alpine
-    container_name: ai-email-sorter-db
+    container_name: inbox-steward-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: email_sorter
-      POSTGRES_PASSWORD: email_sorter
-      POSTGRES_DB: email_sorter
+      POSTGRES_USER: inbox_steward
+      POSTGRES_PASSWORD: inbox_steward
+      POSTGRES_DB: inbox_steward
     volumes:
       - db-data:/var/lib/postgresql/data
     networks:
-      - ai-email-sorter
+      - inbox-steward
 
   redis:
     image: redis:7-alpine
-    container_name: ai-email-sorter-redis
+    container_name: inbox-steward-redis
     restart: unless-stopped
     networks:
-      - ai-email-sorter
+      - inbox-steward
 
 networks:
-  ai-email-sorter:
+  inbox-steward:
     driver: bridge
 
 volumes:

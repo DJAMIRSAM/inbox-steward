@@ -11,12 +11,12 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
-    app_name: str = Field("AI Email Sorter", description="Display name for the web UI")
+    app_name: str = Field("Inbox Steward", description="Display name for the web UI")
     environment: str = Field("development", description="Environment name")
     log_level: str = Field("INFO", description="Python logging level")
 
     database_url: str = Field(
-        "postgresql+psycopg2://email_sorter:email_sorter@db:5432/email_sorter",
+        "postgresql+psycopg2://inbox_steward:inbox_steward@db:5432/inbox_steward",
         description="SQLAlchemy connection string",
     )
 
