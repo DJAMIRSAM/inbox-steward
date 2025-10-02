@@ -12,29 +12,83 @@
       (function () {
         const root = document.documentElement;
         const cycle = ['light', 'dark', 'oled'];
-        const apply = (mode, persist) => {
-          root.classList.remove('dark', 'oled');
-          if (mode === 'dark') {
-            root.classList.add('dark');
-          }
-          if (mode === 'oled') {
-            root.classList.add('dark');
-            root.classList.add('oled');
-          }
-          root.dataset.theme = mode;
-          if (persist) {
-            localStorage.setItem('theme', mode);
-          }
+        const prefersDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const classMap = {
+          light: [],
+          dark: ['dark'],
+          oled: ['dark', 'oled'],
         };
-        const savedTheme = localStorage.getItem('theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const initial = cycle.includes(savedTheme) ? savedTheme : prefersDark ? 'dark' : 'light';
-        apply(initial, false);
+
+        const dispatchThemeChange = () => {
+          document.dispatchEvent(
+            new CustomEvent('themechange', {
+              detail: { theme: root.dataset.theme || 'light' },
+            }),
+          );
+        };
+
+        const apply = (mode, persist) => {
+          const next = cycle.includes(mode) ? mode : 'light';
+          root.classList.remove('dark', 'oled');
+          classMap[next].forEach((cls) => root.classList.add(cls));
+          root.dataset.theme = next;
+          root.style.colorScheme = next === 'light' ? 'light' : 'dark';
+          if (persist) {
+            try {
+              localStorage.setItem('theme', next);
+            } catch (error) {
+              // Access to localStorage can fail in privacy modes; ignore.
+            }
+          }
+          dispatchThemeChange();
+        };
+
+        const getInitialTheme = () => {
+          try {
+            const saved = localStorage.getItem('theme');
+            if (saved && cycle.includes(saved)) {
+              return saved;
+            }
+          } catch (error) {
+            // Ignore access errors and fall back to system preference.
+          }
+          return prefersDarkQuery.matches ? 'dark' : 'light';
+        };
+
+        const initialTheme = getInitialTheme();
+        apply(initialTheme, false);
+
         window.__themeController = {
           apply: (mode) => apply(mode, true),
           current: () => root.dataset.theme || 'light',
-          cycle,
+          cycle: [...cycle],
         };
+
+        window.addEventListener('storage', (event) => {
+          if (event.key === 'theme') {
+            if (event.newValue) {
+              apply(event.newValue, false);
+            } else {
+              apply(getInitialTheme(), false);
+            }
+          }
+        });
+
+        const handleSystemThemeChange = (event) => {
+          try {
+            if (!localStorage.getItem('theme')) {
+              apply(event.matches ? 'dark' : 'light', false);
+            }
+          } catch (error) {
+            apply(event.matches ? 'dark' : 'light', false);
+          }
+        };
+
+        if (typeof prefersDarkQuery.addEventListener === 'function') {
+          prefersDarkQuery.addEventListener('change', handleSystemThemeChange);
+        } else if (typeof prefersDarkQuery.addListener === 'function') {
+          prefersDarkQuery.addListener(handleSystemThemeChange);
+        }
       })();
       window.tailwind = window.tailwind || {};
       window.tailwind.config = {
@@ -100,7 +154,7 @@
             <button
               type="button"
               data-theme-toggle
-              class="inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+              class="inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-200 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60 theme-toggle-control"
             >
               <span data-theme-icon class="text-base leading-none">☀️</span>
               <span data-theme-label>Light</span>
@@ -109,7 +163,7 @@
           <button
             type="button"
             data-theme-toggle
-            class="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-lg text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+            class="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-lg text-slate-600 dark:text-slate-200 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60 theme-toggle-control"
             aria-label="Switch theme"
           >
             <span data-theme-icon class="leading-none">☀️</span>
@@ -181,6 +235,8 @@
         themeToggles.forEach((toggle) => updateThemeToggle(toggle));
       };
 
+      document.addEventListener('themechange', updateAllThemeToggles);
+
       if (controller && themeToggles.length) {
         themeToggles.forEach((toggle) => {
           toggle.addEventListener('click', () => {
@@ -196,60 +252,104 @@
 
       const preloader = document.getElementById('preloader');
       const preloaderLogo = document.querySelector('[data-preloader-logo]');
-      const PRELOADER_MIN_MS = 900;
-      const PRELOADER_FAILSAFE_MS = 7000;
-      const preloaderStart = performance.now();
-      let preloaderLaunchStarted = false;
+      const SKIP_PRELOADER_KEY = 'inbox-steward:skip-preloader';
 
-      if (!preloader) {
-        document.body.classList.remove('preloader-active');
-      }
-
-      const removePreloader = () => {
-        if (!preloader || preloader.classList.contains('is-hidden')) {
-          document.body.classList.remove('preloader-active');
-          return;
+      const resolveNavigationType = () => {
+        const [entry] = performance.getEntriesByType('navigation');
+        if (entry && entry.type) {
+          return entry.type;
         }
-        preloader.classList.add('is-hidden');
-        document.body.classList.remove('preloader-active');
-        window.setTimeout(() => {
-          if (preloader && preloader.parentElement) {
-            preloader.parentElement.removeChild(preloader);
+        if (performance.navigation) {
+          const { type } = performance.navigation;
+          if (type === performance.navigation.TYPE_RELOAD || type === 1) {
+            return 'reload';
           }
-        }, 900);
-      };
-
-      const launchPreloader = () => {
-        if (!preloader || preloaderLaunchStarted) {
-          document.body.classList.remove('preloader-active');
-          return;
+          if (type === performance.navigation.TYPE_BACK_FORWARD || type === 2) {
+            return 'back_forward';
+          }
         }
-        preloaderLaunchStarted = true;
-        preloader.classList.add('is-launching');
-        document.body.classList.remove('preloader-active');
-        window.setTimeout(removePreloader, 820);
+        return 'navigate';
       };
 
-      const finishPreloader = () => {
-        if (!preloader || preloaderLaunchStarted) {
-          return;
+      const navigationType = resolveNavigationType();
+      let skipRequested = false;
+      try {
+        skipRequested = sessionStorage.getItem(SKIP_PRELOADER_KEY) === 'true';
+        if (skipRequested) {
+          sessionStorage.removeItem(SKIP_PRELOADER_KEY);
         }
-        const elapsed = performance.now() - preloaderStart;
-        const wait = Math.max(PRELOADER_MIN_MS - elapsed, 0);
-        window.setTimeout(launchPreloader, wait);
-      };
-
-      if (preloaderLogo) {
-        preloaderLogo.addEventListener('error', () => {
-          preloaderLogo.classList.add('is-hidden');
-        });
+      } catch (error) {
+        skipRequested = false;
       }
 
-      window.addEventListener('load', () => {
-        window.setTimeout(finishPreloader, 200);
-      });
+      const shouldRunPreloader = Boolean(preloader) && !(skipRequested && navigationType !== 'reload');
 
-      window.setTimeout(launchPreloader, PRELOADER_FAILSAFE_MS);
+      if (!shouldRunPreloader) {
+        document.body.classList.remove('preloader-active');
+        if (preloader && preloader.parentElement) {
+          preloader.classList.add('is-hidden');
+          preloader.parentElement.removeChild(preloader);
+        }
+      } else {
+        const PRELOADER_MIN_MS = 900;
+        const PRELOADER_FAILSAFE_MS = 7000;
+        const preloaderStart = performance.now();
+        let preloaderLaunchStarted = false;
+
+        const removePreloader = () => {
+          if (!preloader || preloader.classList.contains('is-hidden')) {
+            document.body.classList.remove('preloader-active');
+            return;
+          }
+          preloader.classList.add('is-hidden');
+          document.body.classList.remove('preloader-active');
+          window.setTimeout(() => {
+            if (preloader && preloader.parentElement) {
+              preloader.parentElement.removeChild(preloader);
+            }
+          }, 900);
+        };
+
+        const launchPreloader = () => {
+          if (!preloader || preloaderLaunchStarted) {
+            document.body.classList.remove('preloader-active');
+            return;
+          }
+          preloaderLaunchStarted = true;
+          preloader.classList.add('is-launching');
+          document.body.classList.remove('preloader-active');
+          window.setTimeout(removePreloader, 820);
+        };
+
+        const finishPreloader = () => {
+          if (!preloader || preloaderLaunchStarted) {
+            return;
+          }
+          const elapsed = performance.now() - preloaderStart;
+          const wait = Math.max(PRELOADER_MIN_MS - elapsed, 0);
+          window.setTimeout(launchPreloader, wait);
+        };
+
+        if (preloaderLogo) {
+          preloaderLogo.addEventListener('error', () => {
+            preloaderLogo.classList.add('is-hidden');
+          });
+        }
+
+        window.addEventListener('load', () => {
+          window.setTimeout(finishPreloader, 200);
+        });
+
+        window.setTimeout(launchPreloader, PRELOADER_FAILSAFE_MS);
+      }
+
+      window.addEventListener('beforeunload', () => {
+        try {
+          sessionStorage.setItem(SKIP_PRELOADER_KEY, 'true');
+        } catch (error) {
+          // Ignore storage exceptions; preloader will show next visit.
+        }
+      });
 
       const navRoot = document.querySelector('nav');
       const navToggle = document.querySelector('[data-mobile-nav-toggle]');

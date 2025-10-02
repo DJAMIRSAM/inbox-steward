@@ -483,6 +483,28 @@ body.mobile-nav-open {
   outline: none;
 }
 
+.theme-toggle-control {
+  color: rgba(71, 85, 105, 0.92);
+  transition: color 0.2s ease;
+}
+
+.theme-toggle-control:hover,
+.theme-toggle-control:focus-visible {
+  color: rgba(67, 56, 202, 0.95);
+}
+
+.dark .theme-toggle-control,
+.oled .theme-toggle-control {
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.dark .theme-toggle-control:hover,
+.dark .theme-toggle-control:focus-visible,
+.oled .theme-toggle-control:hover,
+.oled .theme-toggle-control:focus-visible {
+  color: rgba(199, 210, 254, 0.95);
+}
+
 .mobile-nav-toggle-line {
   position: absolute;
   left: 50%;
