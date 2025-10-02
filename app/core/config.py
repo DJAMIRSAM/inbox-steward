@@ -22,6 +22,12 @@ class Settings(BaseSettings):
 
     redis_url: str = Field("redis://redis:6379/0", description="Redis URL for caching")
 
+    mail_backend: str = Field(
+        "IMAP",
+        validation_alias=AliasChoices("MAIL_BACKEND", "MAIL_PROVIDER", "EMAIL_BACKEND"),
+        description="Mail provider backend: IMAP or EXCHANGE",
+    )
+
     imap_host: str = Field(..., env="IMAP_HOST")
     imap_port: int = Field(993, env="IMAP_PORT")
     imap_username: str = Field(..., env="IMAP_USERNAME")
@@ -42,6 +48,47 @@ class Settings(BaseSettings):
         description="Bearer token for XOAUTH2 authentication",
     )
     imap_mailbox: str = Field("INBOX", env="IMAP_MAILBOX")
+
+    exchange_tenant_id: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices("EXCHANGE_TENANT_ID", "AZURE_TENANT_ID", "O365_TENANT_ID"),
+        description="Azure AD tenant ID for Exchange OAuth",
+    )
+    exchange_client_id: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices("EXCHANGE_CLIENT_ID", "AZURE_CLIENT_ID", "O365_CLIENT_ID"),
+        description="Azure AD application (client) ID",
+    )
+    exchange_client_secret: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices(
+            "EXCHANGE_CLIENT_SECRET",
+            "AZURE_CLIENT_SECRET",
+            "O365_CLIENT_SECRET",
+        ),
+        description="Azure AD application client secret",
+    )
+    exchange_user_id: Optional[str] = Field(
+        None,
+        validation_alias=AliasChoices(
+            "EXCHANGE_USER_ID",
+            "EXCHANGE_PRIMARY_SMTP",
+            "EXCHANGE_MAILBOX",
+            "EXCHANGE_USERNAME",
+        ),
+        description="Mailbox user principal name or primary SMTP address",
+    )
+    exchange_authority: str = Field(
+        "https://login.microsoftonline.com",
+        validation_alias=AliasChoices("EXCHANGE_AUTHORITY", "AZURE_AUTHORITY"),
+        description="Azure AD authority base URL",
+    )
+    exchange_scope: str = Field(
+        "https://graph.microsoft.com/.default",
+        validation_alias=AliasChoices("EXCHANGE_SCOPE", "EXCHANGE_SCOPES"),
+        description="Space separated OAuth scopes for Exchange Graph access",
+    )
+    exchange_timeout: int = Field(30, env="EXCHANGE_TIMEOUT")
 
     timezone: str = Field("America/Vancouver", env="TIMEZONE")
 
@@ -92,6 +139,33 @@ class Settings(BaseSettings):
     def _coerce_pdf_path(cls, value: str | Path) -> Path:
         return Path(value)
 
+    @validator("mail_backend", pre=True)
+    def _normalize_mail_backend(cls, value: str | None) -> str:
+        if not value:
+            return "IMAP"
+        normalized = str(value).strip().upper()
+        if normalized in {"IMAP", "IMAPS"}:
+            return "IMAP"
+        if normalized in {"EXCHANGE", "GRAPH", "OUTLOOK"}:
+            return "EXCHANGE"
+        raise ValueError("MAIL_BACKEND must be IMAP or EXCHANGE")
+
+    @validator("exchange_authority", pre=True)
+    def _normalize_exchange_authority(cls, value: str | None) -> str:
+        if not value:
+            return "https://login.microsoftonline.com"
+        text = str(value).strip()
+        if not text:
+            return "https://login.microsoftonline.com"
+        return text.rstrip("/")
+
+    @validator("exchange_scope", pre=True)
+    def _normalize_exchange_scope(cls, value: str | None) -> str:
+        if not value:
+            return "https://graph.microsoft.com/.default"
+        text = " ".join(part for part in str(value).replace(",", " ").split())
+        return text or "https://graph.microsoft.com/.default"
+
     @validator("imap_encryption", pre=True)
     def _normalize_imap_encryption(cls, value: str | bool | None) -> str:
         if value in (None, ""):
@@ -133,6 +207,10 @@ class Settings(BaseSettings):
             return None
         text = str(value).strip()
         return text or None
+
+    @property
+    def exchange_scopes(self) -> list[str]:
+        return [scope for scope in self.exchange_scope.split() if scope]
 
 
 @lru_cache()

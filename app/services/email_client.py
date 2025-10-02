@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import email
 import logging
 import re
@@ -10,15 +11,17 @@ from email.header import decode_header, make_header
 from email.message import Message
 from typing import Any, Dict, List, Optional
 
+import httpx
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
+from msal import ConfidentialClientApplication
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class EmailClient:
+class IMAPEmailBackend:
     """Wrapper around IMAPClient to simplify message retrieval and actions."""
 
     def __init__(self) -> None:
@@ -276,6 +279,435 @@ class EmailClient:
 
     def _strip_html(self, html: str) -> str:
         return re.sub(r"<[^>]+>", " ", html)
+
+
+class ExchangeGraphBackend:
+    """Microsoft Graph-based mailbox backend for Exchange Online."""
+
+    GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+    def __init__(self) -> None:
+        self._token: Optional[tuple[str, float]] = None
+        self._http = httpx.Client(timeout=settings.exchange_timeout)
+        self._folder_cache: Optional[tuple[float, Dict[str, Dict[str, Optional[str]]]]] = None
+        self._user_cache: Optional[Dict[str, Any]] = None
+
+    def connect(self) -> bool:
+        self._ensure_token()
+        return True
+
+    def fetch_seen_messages(self) -> List[Dict[str, Any]]:
+        messages = self._get_messages(filter="isRead eq true", top=50)
+        return [self._parse_message(item) for item in messages]
+
+    def fetch_latest_message(self) -> Optional[Dict[str, Any]]:
+        items = self._get_messages(top=1)
+        if not items:
+            return None
+        return self._parse_message(items[0])
+
+    def move(self, uid: int | str, destination: str) -> None:
+        folder = self._ensure_folder(destination)
+        path = f"/users/{self._user}/messages/{uid}/move"
+        payload = {"destinationId": folder["id"]}
+        self._request("POST", path, json=payload)
+
+    def flag(self, uid: int | str) -> None:
+        path = f"/users/{self._user}/messages/{uid}"
+        self._request("PATCH", path, json={"flag": {"flagStatus": "flagged"}})
+
+    def unflag(self, uid: int | str) -> None:
+        path = f"/users/{self._user}/messages/{uid}"
+        self._request("PATCH", path, json={"flag": {"flagStatus": "notFlagged"}})
+
+    def ensure_folder(self, folder: str) -> Dict[str, Any]:
+        parts = [part.strip() for part in folder.split("/") if part.strip()]
+        if not parts:
+            raise ValueError("Folder path must not be empty")
+
+        folders = self._load_folders()
+        current_path = ""
+        parent_id: Optional[str] = None
+        for part in parts:
+            current_path = f"{current_path}/{part}".strip("/")
+            existing = folders.get(current_path)
+            if existing:
+                parent_id = existing["id"]
+                continue
+            if parent_id:
+                path = f"/users/{self._user}/mailFolders/{parent_id}/childFolders"
+            else:
+                path = f"/users/{self._user}/mailFolders"
+            created = self._request("POST", path, json={"displayName": part}) or {}
+            folder_id = created.get("id")
+            if not folder_id:
+                raise RuntimeError("Failed to create Exchange folder")
+            folders[current_path] = {"id": folder_id, "name": part, "parent": parent_id}
+            parent_id = folder_id
+        self._folder_cache = (time.monotonic(), folders)
+        return folders[current_path]
+
+    def list_folders(self, refresh: bool = False) -> List[str]:
+        folders = self._load_folders(force=refresh)
+        return sorted(folders.keys())
+
+    def diagnostics(self) -> Dict[str, Any]:
+        try:
+            self._ensure_token()
+            user = self._get_user()
+            inbox = self._request(
+                "GET",
+                f"/users/{self._user}/mailFolders/inbox",
+                params={"$select": "displayName,totalItemCount,unreadItemCount"},
+            )
+            folders = self._load_folders()
+            return {
+                "ok": True,
+                "state": "connected",
+                "selected_folder": inbox.get("displayName", "Inbox") if isinstance(inbox, dict) else "Inbox",
+                "server": "graph.microsoft.com",
+                "encryption": "TLS",
+                "auth_type": "OAUTH2",
+                "mailbox": user.get("mail") or user.get("userPrincipalName"),
+                "mailbox_status": {
+                    "messages": inbox.get("totalItemCount", 0) if isinstance(inbox, dict) else 0,
+                    "unseen": inbox.get("unreadItemCount", 0) if isinstance(inbox, dict) else 0,
+                },
+                "mailbox_error": None,
+                "capabilities": ["Graph", "OAuth2", "Folders"],
+                "capabilities_error": None,
+                "backend": "EXCHANGE",
+                "folder_count": len(folders),
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Exchange diagnostics failed")
+            return {
+                "ok": False,
+                "state": "error",
+                "server": "graph.microsoft.com",
+                "auth_type": "OAUTH2",
+                "mailbox": self._user,
+                "mailbox_error": str(exc),
+                "capabilities": [],
+                "capabilities_error": str(exc),
+                "backend": "EXCHANGE",
+            }
+
+    def reset_connection(self) -> None:
+        self._token = None
+        self._folder_cache = None
+        self._user_cache = None
+        try:
+            self._http.close()
+        finally:
+            self._http = httpx.Client(timeout=settings.exchange_timeout)
+
+    def _ensure_token(self) -> str:
+        now = time.monotonic()
+        if self._token and now < self._token[1]:
+            return self._token[0]
+
+        if not (
+            settings.exchange_client_id
+            and settings.exchange_client_secret
+            and settings.exchange_tenant_id
+        ):
+            raise ValueError(
+                "Exchange OAuth credentials are not fully configured. "
+                "Set EXCHANGE_CLIENT_ID, EXCHANGE_CLIENT_SECRET, and EXCHANGE_TENANT_ID."
+            )
+
+        authority = f"{settings.exchange_authority}/{settings.exchange_tenant_id}"
+        app = ConfidentialClientApplication(
+            client_id=settings.exchange_client_id,
+            authority=authority,
+            client_credential=settings.exchange_client_secret,
+        )
+        result = app.acquire_token_for_client(scopes=settings.exchange_scopes)
+        token = result.get("access_token")
+        if not token:
+            error = result.get("error_description") or result.get("error") or "unknown error"
+            raise RuntimeError(f"Failed to acquire Exchange token: {error}")
+        expires_in = int(result.get("expires_in", 3599))
+        self._token = (token, now + max(expires_in - 60, 60))
+        return token
+
+    def _headers(self) -> Dict[str, str]:
+        token = self._ensure_token()
+        return {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Prefer": 'outlook.body-content-type="text"',
+        }
+
+    @property
+    def _user(self) -> str:
+        user = settings.exchange_user_id or settings.imap_username
+        if not user:
+            raise ValueError("EXCHANGE_USER_ID or IMAP_USERNAME must be configured for Exchange access")
+        return user
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        json: Optional[Dict[str, Any]] = None,
+        absolute: bool = False,
+    ) -> Dict[str, Any]:
+        url = path if absolute else f"{self.GRAPH_BASE}{path}"
+        response = self._http.request(method, url, params=params, json=json, headers=self._headers())
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:  # noqa: BLE001
+            detail = None
+            try:
+                payload = response.json()
+                detail = payload.get("error", {}).get("message")
+            except Exception:  # noqa: BLE001
+                detail = response.text
+            raise RuntimeError(f"Exchange request failed: {detail or exc}") from exc
+        if response.status_code == 204 or not response.content:
+            return {}
+        return response.json()
+
+    def _paginate(
+        self, path: str, *, params: Optional[Dict[str, Any]] = None, top: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        if top:
+            data = self._request("GET", path, params=params)
+            return data.get("value", [])
+
+        items: List[Dict[str, Any]] = []
+        next_path: Optional[str] = path
+        next_params = params
+        while next_path:
+            data = self._request("GET", next_path, params=next_params, absolute=next_path.startswith("http"))
+            items.extend(data.get("value", []))
+            next_link = data.get("@odata.nextLink")
+            if not next_link:
+                break
+            next_path = next_link
+            next_params = None
+        return items
+
+    def _get_messages(
+        self,
+        *,
+        filter: Optional[str] = None,
+        top: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        params: Dict[str, Any] = {
+            "$select": ",".join(
+                [
+                    "id",
+                    "subject",
+                    "from",
+                    "toRecipients",
+                    "ccRecipients",
+                    "body",
+                    "bodyPreview",
+                    "receivedDateTime",
+                    "isRead",
+                    "flag",
+                    "conversationId",
+                    "internetMessageId",
+                    "parentFolderId",
+                    "webLink",
+                    "mimeContent",
+                ]
+            ),
+            "$orderby": "receivedDateTime desc",
+        }
+        if filter:
+            params["$filter"] = filter
+        if top:
+            params["$top"] = top
+        return self._paginate(f"/users/{self._user}/messages", params=params, top=top)
+
+    def _load_folders(self, force: bool = False) -> Dict[str, Dict[str, Optional[str]]]:
+        if self._folder_cache and not force:
+            timestamp, cache = self._folder_cache
+            if time.monotonic() - timestamp < 300:
+                return cache
+
+        data = self._paginate(
+            f"/users/{self._user}/mailFolders",
+            params={"$select": "id,displayName,parentFolderId"},
+        )
+        id_map: Dict[str, Dict[str, Optional[str]]] = {}
+        for item in data:
+            folder_id = item.get("id")
+            if not folder_id:
+                continue
+            id_map[folder_id] = {
+                "id": folder_id,
+                "name": item.get("displayName") or "",
+                "parent": item.get("parentFolderId"),
+            }
+
+        path_map: Dict[str, Dict[str, Optional[str]]] = {}
+        for folder_id, info in id_map.items():
+            path = self._build_folder_path(folder_id, id_map)
+            if path:
+                path_map[path] = info
+
+        self._folder_cache = (time.monotonic(), path_map)
+        return path_map
+
+    def _build_folder_path(
+        self, folder_id: str, id_map: Dict[str, Dict[str, Optional[str]]]
+    ) -> Optional[str]:
+        names: List[str] = []
+        current = folder_id
+        visited: set[str] = set()
+        while current and current not in visited:
+            visited.add(current)
+            info = id_map.get(current)
+            if not info:
+                break
+            name = info.get("name")
+            if not name:
+                break
+            names.append(name)
+            parent = info.get("parent")
+            if not parent or parent not in id_map:
+                break
+            current = parent
+        if not names:
+            return None
+        return "/".join(reversed(names))
+
+    def _folder_path_for_id(self, folder_id: Optional[str]) -> str:
+        if not folder_id:
+            return ""
+        folders = self._load_folders()
+        for path, info in folders.items():
+            if info.get("id") == folder_id:
+                return path
+        folders = self._load_folders(force=True)
+        for path, info in folders.items():
+            if info.get("id") == folder_id:
+                return path
+        return ""
+
+    def _parse_message(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        subject = item.get("subject") or ""
+        sender = self._format_address(item.get("from"))
+        to_recipients = self._format_addresses(item.get("toRecipients"))
+        cc_recipients = self._format_addresses(item.get("ccRecipients"))
+        message_id = item.get("internetMessageId")
+        thread_id = item.get("conversationId") or ""
+        body_obj = item.get("body") or {}
+        body_content = body_obj.get("content") or ""
+        body = body_content if body_content else item.get("bodyPreview") or ""
+        if isinstance(body_obj, dict) and body_obj.get("contentType", "").lower() == "html":
+            body = self._strip_html(body)
+        received = item.get("receivedDateTime")
+        try:
+            if received:
+                received_at = datetime.fromisoformat(received.replace("Z", "+00:00")).astimezone(timezone.utc)
+            else:
+                received_at = datetime.now(timezone.utc)
+        except ValueError:
+            received_at = datetime.now(timezone.utc)
+
+        raw_b64 = item.get("mimeContent")
+        raw = ""
+        if raw_b64:
+            try:
+                raw = base64.b64decode(raw_b64).decode("utf-8", errors="ignore")
+            except Exception:  # noqa: BLE001
+                raw = ""
+
+        folder_path = self._folder_path_for_id(item.get("parentFolderId"))
+        return {
+            "uid": str(item.get("id")),
+            "subject": subject,
+            "sender": sender,
+            "to": to_recipients,
+            "cc": cc_recipients,
+            "message_id": message_id,
+            "thread_id": thread_id,
+            "body": body,
+            "received_at": received_at.isoformat(),
+            "raw": raw,
+            "folder": folder_path or "",
+        }
+
+    def _strip_html(self, value: str) -> str:
+        return re.sub(r"<[^>]+>", " ", value)
+
+    def _format_address(self, entry: Optional[Dict[str, Any]]) -> str:
+        if not entry or "emailAddress" not in entry:
+            return ""
+        email_info = entry["emailAddress"]
+        address = email_info.get("address") or ""
+        name = email_info.get("name") or ""
+        if name and address:
+            return f"{name} <{address}>"
+        return address or name
+
+    def _format_addresses(self, entries: Optional[List[Dict[str, Any]]]) -> str:
+        if not entries:
+            return ""
+        return ", ".join(filter(None, (self._format_address(entry) for entry in entries)))
+
+    def _get_user(self) -> Dict[str, Any]:
+        if self._user_cache:
+            return self._user_cache
+        data = self._request(
+            "GET",
+            f"/users/{self._user}",
+            params={"$select": "id,displayName,mail,userPrincipalName"},
+        )
+        self._user_cache = data
+        return data
+
+
+class EmailClient:
+    """Facade that routes calls to the configured mail backend."""
+
+    def __init__(self) -> None:
+        if settings.mail_backend == "EXCHANGE":
+            self._backend = ExchangeGraphBackend()
+        else:
+            self._backend = IMAPEmailBackend()
+
+    @property
+    def backend_name(self) -> str:
+        return settings.mail_backend
+
+    def connect(self) -> Any:
+        return self._backend.connect()
+
+    def fetch_seen_messages(self) -> List[Dict[str, Any]]:
+        return self._backend.fetch_seen_messages()
+
+    def fetch_latest_message(self) -> Optional[Dict[str, Any]]:
+        return self._backend.fetch_latest_message()
+
+    def move(self, uid: int | str, destination: str) -> None:
+        self._backend.move(uid, destination)
+
+    def flag(self, uid: int | str) -> None:
+        self._backend.flag(uid)
+
+    def unflag(self, uid: int | str) -> None:
+        self._backend.unflag(uid)
+
+    def ensure_folder(self, folder: str) -> Any:
+        return self._backend.ensure_folder(folder)
+
+    def list_folders(self, refresh: bool = False) -> List[str]:
+        return self._backend.list_folders(refresh)
+
+    def diagnostics(self) -> Dict[str, Any]:
+        return self._backend.diagnostics()
+
+    def reset_connection(self) -> None:
+        self._backend.reset_connection()
 
 
 email_client = EmailClient()

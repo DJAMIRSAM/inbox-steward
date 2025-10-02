@@ -38,20 +38,24 @@
   <div class="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
     <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-slate-50/60 dark:bg-slate-900/40">
       <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Service configuration</h2>
+      {% set mail = overview.mail %}
+      {% set mail_label = mail.backend + ' mailbox' %}
       <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
         <div class="flex items-center justify-between gap-3">
-          <dt class="font-medium">IMAP</dt>
+          <dt class="font-medium">{{ mail_label }}</dt>
           <dd class="text-right">
             <div class="flex items-center justify-end gap-2">
-              <span>{{ overview.imap.host }} &middot; {{ overview.imap.mailbox }}</span>
-              {% if overview.imap.configured %}
+              <span>
+                {{ mail.host }}{% if mail.mailbox %} &middot; {{ mail.mailbox }}{% endif %}
+              </span>
+              {% if mail.configured %}
               <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Configured</span>
               {% else %}
               <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-200">Missing creds</span>
               {% endif %}
             </div>
             <div class="text-xs text-slate-500 dark:text-slate-400">
-              {{ overview.imap.username }} &middot; {{ overview.imap.auth }} &middot; poll {{ overview.imap.poll }}s
+              {{ mail.username or '—' }}{% if mail.auth %} &middot; {{ mail.auth }}{% endif %} &middot; poll {{ mail.poll }}s
             </div>
           </dd>
         </div>
@@ -103,7 +107,8 @@
       {% set audit = results.audit %}
       {% if audit %}
       <ul class="mt-4 space-y-2 text-sm">
-        {% for key, label in {'imap': 'IMAP login', 'folders': 'Folder tree', 'ollama': 'Ollama API', 'home_assistant': 'Home Assistant'}.items() %}
+        {% set audit_labels = {'mail': mail.backend ~ ' connection', 'folders': 'Folder tree', 'ollama': 'Ollama API', 'home_assistant': 'Home Assistant'} %}
+        {% for key, label in audit_labels.items() %}
         {% set ok = audit.get(key) %}
         <li class="flex items-center justify-between gap-3">
           <span class="text-slate-600 dark:text-slate-300">{{ label }}</span>
@@ -132,6 +137,37 @@
       <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Environment snapshot</h2>
       {% set env = environment %}
       <dl class="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
+        <div>
+          <dt class="font-medium flex items-center justify-between gap-3">
+            <span>{{ env.mail.backend }} mailbox</span>
+            {% if env.mail.configured %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200">Loaded</span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-200">Partial</span>
+            {% endif %}
+          </dt>
+          <dd class="mt-2 space-y-1">
+            {% if env.mail.backend == 'Exchange' %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Identity</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.identity or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Tenant</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.tenant or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Client ID</div>
+            <div class="font-mono text-xs">{{ env.mail.client_id }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Scopes</div>
+            <div class="font-mono text-xs break-words">{{ env.mail.scopes }}</div>
+            {% else %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Host</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.host }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Mailbox</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.mailbox }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Username</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.username }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Auth</div>
+            <div class="font-mono text-xs break-words">{{ env.mail.auth }}</div>
+            {% endif %}
+          </dd>
+        </div>
         <div>
           <dt class="font-medium flex items-center justify-between gap-3">
             <span>Home Assistant</span>
@@ -167,7 +203,7 @@
   <div class="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
     <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
       <div>
-        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">IMAP mailbox</h2>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">{{ mail.backend }} mailbox</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">Pulls the newest message and shows a quick preview.</p>
       </div>
       <form method="post" class="mt-auto" data-debug-form>
@@ -210,7 +246,7 @@
     <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
       <div>
         <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Mailbox folders</h2>
-        <p class="text-sm text-slate-500 dark:text-slate-400">Lists every IMAP folder the assistant can see.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Lists every {{ mail.backend }} folder the assistant can see.</p>
       </div>
       <form method="post" class="mt-auto" data-debug-form>
         <input type="hidden" name="action" value="list_folders" />
@@ -233,7 +269,7 @@
     </div>
     <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
       <div>
-        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">IMAP session health</h2>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">{{ mail.backend }} session health</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">Inspect the authenticated session, mailbox counters, and server capabilities.</p>
       </div>
       <div class="mt-auto flex flex-col sm:flex-row gap-3">
@@ -247,34 +283,34 @@
         </form>
       </div>
       <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-3">
-        {% set imap = results.imap %}
-        {% if imap is none %}
-        <p class="text-slate-400 dark:text-slate-500">Run diagnostics to view live IMAP session details.</p>
-        {% elif imap.reset %}
+        {% set mail_diag = results.mail %}
+        {% if mail_diag is none %}
+        <p class="text-slate-400 dark:text-slate-500">Run diagnostics to view live {{ mail.backend }} session details.</p>
+        {% elif mail_diag.reset %}
         <p class="text-slate-500 dark:text-slate-300">Connection reset. Inspect the session to confirm a fresh login succeeds.</p>
-        {% elif imap.ok %}
+        {% elif mail_diag.ok %}
         <dl class="space-y-2">
           <div class="flex items-center justify-between gap-3">
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Server</dt>
-            <dd class="font-medium text-slate-700 dark:text-slate-100">{{ imap.server }} · {{ imap.encryption }}</dd>
+            <dd class="font-medium text-slate-700 dark:text-slate-100">{{ mail_diag.server }}{% if mail_diag.encryption %} · {{ mail_diag.encryption }}{% endif %}</dd>
           </div>
           <div class="flex items-center justify-between gap-3">
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Authentication</dt>
-            <dd>{{ imap.auth_type }}</dd>
+            <dd>{{ mail_diag.auth_type }}</dd>
           </div>
           <div class="flex items-center justify-between gap-3">
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">State</dt>
-            <dd>{{ imap.state }}</dd>
+            <dd>{{ mail_diag.state }}</dd>
           </div>
           <div class="flex items-center justify-between gap-3">
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Selected folder</dt>
-            <dd>{{ imap.selected_folder or '—' }}</dd>
+            <dd>{{ mail_diag.selected_folder or '—' }}</dd>
           </div>
-          {% if imap.mailbox_status %}
+          {% if mail_diag.mailbox_status %}
           <div>
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Mailbox counters</dt>
             <dd class="mt-1 grid grid-cols-3 gap-2 text-xs">
-              {% for key, value in imap.mailbox_status.items() %}
+              {% for key, value in mail_diag.mailbox_status.items() %}
               <span class="rounded-md bg-slate-200/60 dark:bg-slate-800/60 px-2 py-1 text-center">{{ key }}: {{ value }}</span>
               {% endfor %}
             </dd>
@@ -282,14 +318,14 @@
           {% endif %}
           <div>
             <dt class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Capabilities</dt>
-            {% if imap.capabilities %}
+            {% if mail_diag.capabilities %}
             <dd class="mt-1 flex flex-wrap gap-1 text-xs">
-              {% for cap in imap.capabilities %}
+              {% for cap in mail_diag.capabilities %}
               <span class="px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-800/70">{{ cap }}</span>
               {% endfor %}
             </dd>
-            {% elif imap.capabilities_error %}
-            <dd class="text-rose-600 dark:text-rose-300">{{ imap.capabilities_error }}</dd>
+            {% elif mail_diag.capabilities_error %}
+            <dd class="text-rose-600 dark:text-rose-300">{{ mail_diag.capabilities_error }}</dd>
             {% else %}
             <dd>Unavailable</dd>
             {% endif %}
@@ -297,12 +333,12 @@
         </dl>
         {% else %}
         <div class="space-y-2">
-          <p class="text-rose-600 dark:text-rose-300">{{ imap.error }}</p>
-          {% if imap.mailbox_error %}
-          <p class="text-xs text-slate-500 dark:text-slate-400">Mailbox error: {{ imap.mailbox_error }}</p>
+          <p class="text-rose-600 dark:text-rose-300">{{ mail_diag.error }}</p>
+          {% if mail_diag.mailbox_error %}
+          <p class="text-xs text-slate-500 dark:text-slate-400">Mailbox error: {{ mail_diag.mailbox_error }}</p>
           {% endif %}
-          {% if imap.capabilities_error %}
-          <p class="text-xs text-slate-500 dark:text-slate-400">Capabilities error: {{ imap.capabilities_error }}</p>
+          {% if mail_diag.capabilities_error %}
+          <p class="text-xs text-slate-500 dark:text-slate-400">Capabilities error: {{ mail_diag.capabilities_error }}</p>
           {% endif %}
         </div>
         {% endif %}

@@ -44,7 +44,7 @@ def _empty_debug_results() -> dict[str, dict[str, object] | None]:
         "ollama": None,
         "home_assistant": None,
         "folders": None,
-        "imap": None,
+        "mail": None,
         "audit": None,
     }
 
@@ -54,38 +54,38 @@ DEBUG_PROGRESS_STEPS: Dict[str, Dict[str, Any]] = {
         "title": "Run connectivity audit",
         "steps": [
             {"key": "audit_email", "label": "Fetch latest mailbox message", "status": "pending"},
-            {"key": "audit_folders", "label": "List IMAP folders", "status": "pending"},
+            {"key": "audit_folders", "label": "List mailbox folders", "status": "pending"},
             {"key": "audit_ollama", "label": "Ping Ollama endpoint", "status": "pending"},
             {"key": "audit_home_assistant", "label": "Check Home Assistant status", "status": "pending"},
-            {"key": "audit_imap", "label": "Inspect IMAP session", "status": "pending"},
+            {"key": "audit_imap", "label": "Inspect mailbox session", "status": "pending"},
             {"key": "audit_summary", "label": "Summarize audit results", "status": "pending"},
         ],
     },
     "test_email": {
         "title": "Fetch latest mailbox message",
         "steps": [
-            {"key": "email_connect", "label": "Connect to IMAP", "status": "pending"},
+            {"key": "email_connect", "label": "Connect to mailbox", "status": "pending"},
             {"key": "email_fetch", "label": "Retrieve latest message", "status": "pending"},
         ],
     },
     "list_folders": {
-        "title": "Refresh IMAP folder tree",
+        "title": "Refresh mailbox folder tree",
         "steps": [
-            {"key": "folders_connect", "label": "Connect to IMAP", "status": "pending"},
+            {"key": "folders_connect", "label": "Connect to mailbox", "status": "pending"},
             {"key": "folders_fetch", "label": "Fetch folder listing", "status": "pending"},
         ],
     },
     "imap_diagnostics": {
-        "title": "Inspect IMAP diagnostics",
+        "title": "Inspect mailbox diagnostics",
         "steps": [
-            {"key": "imap_connect", "label": "Connect to IMAP", "status": "pending"},
+            {"key": "imap_connect", "label": "Connect to mailbox", "status": "pending"},
             {"key": "imap_inspect", "label": "Collect session details", "status": "pending"},
         ],
     },
     "reset_imap": {
-        "title": "Reset IMAP connection",
+        "title": "Reset mailbox connection",
         "steps": [
-            {"key": "imap_reset", "label": "Reset cached IMAP session", "status": "pending"},
+            {"key": "imap_reset", "label": "Reset cached mailbox session", "status": "pending"},
         ],
     },
     "test_ollama": {
@@ -106,9 +106,30 @@ DEBUG_PROGRESS_STEPS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _mail_backend_label() -> str:
+    return "Exchange" if settings.mail_backend == "EXCHANGE" else "IMAP"
+
+
 def _service_overview() -> Dict[str, Dict[str, Any]]:
-    return {
-        "imap": {
+    if settings.mail_backend == "EXCHANGE":
+        mailbox_identity = settings.exchange_user_id or settings.imap_username or ""
+        mail_configured = bool(
+            settings.exchange_client_id
+            and settings.exchange_client_secret
+            and settings.exchange_tenant_id
+            and mailbox_identity
+        )
+        mail_section = {
+            "configured": mail_configured,
+            "backend": "Exchange",
+            "host": "graph.microsoft.com",
+            "mailbox": mailbox_identity,
+            "poll": settings.poll_interval_seconds,
+            "username": mailbox_identity,
+            "auth": "OAuth2 client credential",
+        }
+    else:
+        mail_section = {
             "configured": bool(
                 settings.imap_host
                 and settings.imap_username
@@ -117,12 +138,16 @@ def _service_overview() -> Dict[str, Dict[str, Any]]:
                     or (settings.imap_auth_type != "XOAUTH2" and settings.imap_password)
                 )
             ),
+            "backend": "IMAP",
             "host": settings.imap_host,
             "mailbox": settings.imap_mailbox,
             "poll": settings.poll_interval_seconds,
             "username": settings.imap_username,
             "auth": settings.imap_auth_type,
-        },
+        }
+
+    return {
+        "mail": mail_section,
         "ollama": {
             "configured": bool(settings.ollama_endpoint and settings.ollama_model),
             "endpoint": settings.ollama_endpoint,
@@ -150,7 +175,40 @@ def _mask_secret(value: str | None) -> str:
 
 
 def _environment_snapshot() -> Dict[str, Any]:
+    if settings.mail_backend == "EXCHANGE":
+        mailbox_identity = settings.exchange_user_id or settings.imap_username or ""
+        mail_env = {
+            "backend": "Exchange",
+            "identity": mailbox_identity,
+            "tenant": settings.exchange_tenant_id or "",
+            "client_id": _mask_secret(settings.exchange_client_id),
+            "scopes": settings.exchange_scope,
+            "configured": bool(
+                settings.exchange_client_id
+                and settings.exchange_client_secret
+                and settings.exchange_tenant_id
+                and mailbox_identity
+            ),
+        }
+    else:
+        mail_env = {
+            "backend": "IMAP",
+            "host": f"{settings.imap_host}:{settings.imap_port}",
+            "mailbox": settings.imap_mailbox,
+            "username": settings.imap_username,
+            "auth": settings.imap_auth_type,
+            "configured": bool(
+                settings.imap_host
+                and settings.imap_username
+                and (
+                    (settings.imap_auth_type == "XOAUTH2" and settings.imap_oauth2_token)
+                    or (settings.imap_auth_type != "XOAUTH2" and settings.imap_password)
+                )
+            ),
+        }
+
     return {
+        "mail": mail_env,
         "home_assistant": {
             "base_url": settings.ha_base_url or "",
             "token": _mask_secret(settings.ha_token),
@@ -164,8 +222,14 @@ def _environment_snapshot() -> Dict[str, Any]:
     }
 
 
-def _friendly_imap_error(exc: Exception) -> str:
+def _friendly_mail_error(exc: Exception) -> str:
     message = str(exc)
+    if settings.mail_backend == "EXCHANGE":
+        if "acquire Exchange token" in message or "invalid_client" in message:
+            return "Exchange OAuth failed. Verify Azure app ID, client secret, tenant ID, and mailbox permissions."
+        if "401" in message or "unauthorized" in message.lower():
+            return "Exchange rejected the request. Confirm the service principal has Mail.ReadWrite permissions."
+        return message
     if "NONAUTH" in message or "LOGIN failed" in message:
         return "Authentication failed. Verify IMAP username, password, and app password permissions."
     if "Timed out" in message or "timeout" in message.lower():
@@ -283,7 +347,7 @@ async def _check_latest_email() -> dict[str, Any]:
         message = await asyncio.to_thread(email_client.fetch_latest_message)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Email connectivity check failed")
-        return {"ok": False, "error": _friendly_imap_error(exc)}
+        return {"ok": False, "error": _friendly_mail_error(exc)}
     if not message:
         return {"ok": False, "error": "No messages found in the mailbox."}
     preview = _summarize_body(message.get("body"))
@@ -300,13 +364,13 @@ async def _check_latest_email() -> dict[str, Any]:
     }
 
 
-async def _list_imap_folders() -> dict[str, Any]:
+async def _list_mail_folders() -> dict[str, Any]:
     try:
         folders: List[str] = await asyncio.to_thread(email_client.list_folders, True)
         return {"ok": True, "folders": folders}
     except Exception as exc:  # noqa: BLE001
         logger.exception("Folder listing failed")
-        return {"ok": False, "error": _friendly_imap_error(exc)}
+        return {"ok": False, "error": _friendly_mail_error(exc)}
 
 
 async def _check_ollama_ping() -> dict[str, Any]:
@@ -326,7 +390,7 @@ async def _check_home_assistant(send_notification: bool = False) -> dict[str, An
     return await notifier.check_status()
 
 
-async def _imap_diagnostics() -> dict[str, Any]:
+async def _mail_diagnostics() -> dict[str, Any]:
     try:
         details = await asyncio.to_thread(email_client.diagnostics)
         if not details.get("ok") and "error" not in details:
@@ -334,7 +398,7 @@ async def _imap_diagnostics() -> dict[str, Any]:
         return details
     except Exception as exc:  # noqa: BLE001
         logger.exception("IMAP diagnostics failed")
-        return {"ok": False, "error": _friendly_imap_error(exc)}
+        return {"ok": False, "error": _friendly_mail_error(exc)}
 
 
 async def _perform_debug_action(
@@ -342,6 +406,7 @@ async def _perform_debug_action(
 ) -> tuple[dict[str, dict[str, object] | None], Optional[Dict[str, Any]]]:
     results = _empty_debug_results()
     flash: Optional[Dict[str, Any]] = None
+    mail_label = _mail_backend_label()
 
     def start(key: str, detail: Optional[str] = None) -> None:
         if progress:
@@ -371,14 +436,17 @@ async def _perform_debug_action(
         results["email"] = result
     elif action == "list_folders":
         start("folders_connect", "Connecting to mailbox…")
-        result = await _list_imap_folders()
+        result = await _list_mail_folders()
         if result.get("ok"):
             complete("folders_connect", "Connection succeeded")
             start("folders_fetch", "Retrieving folders…")
             complete("folders_fetch", f"Found {len(result.get('folders') or [])} folders")
             folders: List[str] = result.get("folders") or []
             label = "folder" if len(folders) == 1 else "folders"
-            flash = {"status": "success", "message": f"Discovered {len(folders)} IMAP {label}."}
+            flash = {
+                "status": "success",
+                "message": f"Discovered {len(folders)} {mail_label} {label}.",
+            }
         else:
             fail("folders_connect", result.get("error"))
             flash = {"status": "error", "message": result.get("error", "Unable to list folders.")}
@@ -412,26 +480,38 @@ async def _perform_debug_action(
         results["home_assistant"] = result
     elif action == "imap_diagnostics":
         start("imap_connect", "Connecting to mailbox…")
-        result = await _imap_diagnostics()
+        result = await _mail_diagnostics()
         if result.get("ok"):
             complete("imap_connect", "Authenticated")
             start("imap_inspect", "Collecting diagnostics…")
             complete("imap_inspect", "Session details collected")
-            flash = {"status": "success", "message": "IMAP session is authenticated and mailbox statistics are available."}
+            flash = {
+                "status": "success",
+                "message": f"{mail_label} session is authenticated and mailbox statistics are available.",
+            }
         elif result.get("reset"):
             complete("imap_connect", "Connection reset")
-            flash = {"status": "info", "message": "IMAP connection reset. Run a diagnostic to establish a fresh session."}
+            flash = {
+                "status": "info",
+                "message": f"{mail_label} connection reset. Run a diagnostic to establish a fresh session.",
+            }
         else:
             fail("imap_connect", result.get("error"))
             fail("imap_inspect", result.get("error"))
-            flash = {"status": "error", "message": result.get("error", "Unable to inspect IMAP session.")}
-        results["imap"] = result
+            flash = {
+                "status": "error",
+                "message": result.get("error", f"Unable to inspect {mail_label} session."),
+            }
+        results["mail"] = result
     elif action == "reset_imap":
         start("imap_reset", "Clearing cached session…")
         await asyncio.to_thread(email_client.reset_connection)
         complete("imap_reset", "Connection reset")
-        results["imap"] = {"ok": True, "reset": True}
-        flash = {"status": "info", "message": "IMAP connection reset. Run a diagnostic to establish a fresh session."}
+        results["mail"] = {"ok": True, "reset": True}
+        flash = {
+            "status": "info",
+            "message": f"{mail_label} connection reset. Run a diagnostic to establish a fresh session.",
+        }
     elif action == "run_audit":
         start("audit_email", "Fetching latest message…")
         email_result = await _check_latest_email()
@@ -441,7 +521,7 @@ async def _perform_debug_action(
             fail("audit_email", email_result.get("error"))
 
         start("audit_folders", "Listing mailbox folders…")
-        folder_result = await _list_imap_folders()
+        folder_result = await _list_mail_folders()
         if folder_result.get("ok"):
             complete("audit_folders", f"Found {len(folder_result.get('folders') or [])} folders")
         else:
@@ -461,16 +541,16 @@ async def _perform_debug_action(
         else:
             fail("audit_home_assistant", ha_result.get("error"))
 
-        start("audit_imap", "Gathering IMAP diagnostics…")
-        imap_result = await _imap_diagnostics()
-        if imap_result.get("ok"):
-            complete("audit_imap", "IMAP diagnostics ready")
+        start("audit_imap", f"Gathering {mail_label} diagnostics…")
+        mail_result = await _mail_diagnostics()
+        if mail_result.get("ok"):
+            complete("audit_imap", f"{mail_label} diagnostics ready")
         else:
-            fail("audit_imap", imap_result.get("error"))
+            fail("audit_imap", mail_result.get("error"))
 
         start("audit_summary", "Summarizing results…")
         audit_summary = {
-            "imap": imap_result.get("ok", False),
+            "mail": mail_result.get("ok", False),
             "folders": folder_result.get("ok", False),
             "ollama": ollama_result.get("ok", False),
             "home_assistant": ha_result.get("ok", False),
@@ -483,12 +563,12 @@ async def _perform_debug_action(
                 "folders": folder_result,
                 "ollama": ollama_result,
                 "home_assistant": ha_result,
-                "imap": imap_result,
+                "mail": mail_result,
                 "audit": audit_summary,
             }
         )
 
-        if all(item.get("ok") for item in [email_result, folder_result, ollama_result, ha_result, imap_result]):
+        if all(item.get("ok") for item in [email_result, folder_result, ollama_result, ha_result, mail_result]):
             flash = {"status": "success", "message": "All connectivity checks passed. Inbox Steward is ready to run."}
         else:
             flash = {"status": "error", "message": "Connectivity audit completed with failures. See details below."}

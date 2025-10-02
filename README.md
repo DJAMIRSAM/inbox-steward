@@ -6,7 +6,7 @@ Inbox Steward keeps your inbox tidy with a local-first workflow that classifies 
 
 ## Features
 
-- **Local LLM classification** – Prompts a local Ollama model and repairs JSON output automatically. The prompt now ships the live IMAP folder tree and historical hints on every call so the model can create or reuse folders confidently. Includes deterministic fallbacks when the model is unreachable.
+- **Local LLM classification** – Prompts a local Ollama model and repairs JSON output automatically. The prompt now ships the live mailbox folder tree and historical hints on every call so the model can create or reuse folders confidently. Includes deterministic fallbacks when the model is unreachable.
 - **Smart foldering** – Enforces the provided naming rules, remembers past overrides through lightweight folder hints, and creates folders on demand when confidence is high.
 - **Sticky lane handling** – Flags actionable email and files it once you archive the thread.
 - **Calendar automation** – Creates, updates, and cancels events with deterministic UIDs, conflict detection, and a persisted registry for follow-ups.
@@ -40,7 +40,7 @@ Primary components:
 ## Getting started
 
 1. Copy `.env.example` to `.env` and fill in your mail + Home Assistant credentials.
-2. Review `docker-compose.yml` and update IMAP, Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI. Set `IMAP_ENCRYPTION` to `SSL`, `STARTTLS`, or `NONE` and choose an `IMAP_AUTH_TYPE` (`LOGIN` by default, or `XOAUTH2` if your tenant disallows basic auth).
+2. Review `docker-compose.yml` and update the mail (IMAP or Exchange), Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI. Set `MAIL_BACKEND` to `IMAP` (default) or `EXCHANGE`, then provide the corresponding credentials. For IMAP you can still tune `IMAP_ENCRYPTION` (`SSL`, `STARTTLS`, or `NONE`) and `IMAP_AUTH_TYPE` (`LOGIN` by default, or `XOAUTH2` if basic auth is blocked).
 3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8003}` by default.
 4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see Continuous image builds).
 
@@ -50,15 +50,30 @@ Primary components:
 1. Open Portainer and create a new stack named **inbox-steward**.
 2. Paste the contents of [`docker-compose.yml`](docker-compose.yml) into the editor.
 3. In the Environment variables section add secrets for:
-   - `IMAP_USERNAME`
-   - `IMAP_PASSWORD`
+   - `MAIL_BACKEND` (`IMAP` or `EXCHANGE`)
+   - For IMAP backends: `IMAP_USERNAME`, `IMAP_PASSWORD`
+   - For Exchange backends: `EXCHANGE_TENANT_ID`, `EXCHANGE_CLIENT_ID`, `EXCHANGE_CLIENT_SECRET`, and `EXCHANGE_USER_ID`
    - `HOME_ASSISTANT_TOKEN`
-   - (Optional) `IMAP_ENCRYPTION` if your provider requires `STARTTLS` or an unencrypted connection.
-   - (Optional) `IMAP_AUTH_TYPE` and `IMAP_OAUTH2_TOKEN` if your provider requires OAuth 2.0 app passwords/tokens.
+   - (Optional, IMAP) `IMAP_ENCRYPTION` if your provider requires `STARTTLS` or an unencrypted connection.
+   - (Optional, IMAP) `IMAP_AUTH_TYPE` and `IMAP_OAUTH2_TOKEN` if your provider requires OAuth 2.0 app passwords/tokens.
+   - (Optional, Exchange) `EXCHANGE_SCOPE` if you need custom Microsoft Graph scopes.
 4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8003 is already in use. Portainer will publish the UI on that port.
 5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
 6. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
 7. (Optional) To use the prebuilt image, update the stack so the app service references `ghcr.io/djamirsam/inbox-steward:latest` instead of building locally. The GitHub Action below keeps that tag fresh after every merge.
+
+### Mail backend configuration
+
+- **IMAP (default)** – Works with providers that still offer IMAP+SMTP app passwords. Supply `IMAP_HOST`, `IMAP_PORT`, `IMAP_USERNAME`, and `IMAP_PASSWORD`. Tune `IMAP_ENCRYPTION`, `IMAP_AUTH_TYPE`, and (if needed) `IMAP_OAUTH2_TOKEN` for OAuth-enabled tenants.
+- **Exchange Online (graph)** – Use when Outlook/Office365 disables IMAP. Create an Azure AD app registration with **Mail.ReadWrite** application permissions, grant admin consent, then configure:
+  - `MAIL_BACKEND=EXCHANGE`
+  - `EXCHANGE_TENANT_ID`
+  - `EXCHANGE_CLIENT_ID`
+  - `EXCHANGE_CLIENT_SECRET`
+  - `EXCHANGE_USER_ID` (UPN or primary SMTP of the mailbox)
+  - (Optional) `EXCHANGE_SCOPE` if you need to add delegated scopes beyond the default `https://graph.microsoft.com/.default`.
+
+The diagnostics tab now reports which backend is active and surfaces OAuth errors, token expiry, and folder discovery health for Exchange accounts alongside the existing IMAP tooling.
 
 ### Manual Docker CLI deployment
 
@@ -114,7 +129,7 @@ Every batch of actions is tagged with a deterministic session ID. Undo tokens ar
 
 ## Testing workflow
 
-Integrate with your mail provider by granting IMAP access. The assistant inspects `SEEN` messages, so mark something as read to trigger classification. Acceptance tests:
+Integrate with your mail provider by granting mailbox access (IMAP app password or Exchange Graph permissions). The assistant inspects recently read messages, so mark something as read to trigger classification. Acceptance tests:
 
 1. **Receipts** – Send a PDF receipt. It should land in `Finance/Receipts` within two minutes.
 2. **Newsletters** – Mark a newsletter as read. It should jump to `Newsletters` immediately.

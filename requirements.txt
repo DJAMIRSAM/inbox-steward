@@ -10,3 +10,4 @@ aiofiles==23.2.1
 python-multipart==0.0.9
 pypdf==4.1.0
 pydantic-settings==2.5.2
+msal==1.31.0
