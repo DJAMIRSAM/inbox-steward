@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     exchange_tenant_id: Optional[str] = Field(
         None,
         validation_alias=AliasChoices("EXCHANGE_TENANT_ID", "AZURE_TENANT_ID", "O365_TENANT_ID"),
-        description="Azure AD tenant ID for Exchange OAuth",
+        description="Azure AD tenant ID or directory hint for Exchange OAuth",
     )
     exchange_client_id: Optional[str] = Field(
         None,
@@ -87,6 +87,24 @@ class Settings(BaseSettings):
         "https://graph.microsoft.com/.default",
         validation_alias=AliasChoices("EXCHANGE_SCOPE", "EXCHANGE_SCOPES"),
         description="Space separated OAuth scopes for Exchange Graph access",
+    )
+    exchange_login_mode: str = Field(
+        "CLIENT",
+        validation_alias=AliasChoices(
+            "EXCHANGE_LOGIN_MODE",
+            "EXCHANGE_AUTH_MODE",
+            "EXCHANGE_AUTH_FLOW",
+        ),
+        description="Exchange auth flow: CLIENT (application) or DELEGATED (device login)",
+    )
+    exchange_token_cache: Path = Field(
+        Path("/data/exchange/token.json"),
+        validation_alias=AliasChoices(
+            "EXCHANGE_TOKEN_CACHE",
+            "EXCHANGE_TOKEN_PATH",
+            "EXCHANGE_CACHE_PATH",
+        ),
+        description="Location to persist Exchange delegated auth tokens",
     )
     exchange_timeout: int = Field(30, env="EXCHANGE_TIMEOUT")
 
@@ -165,6 +183,17 @@ class Settings(BaseSettings):
             return "https://graph.microsoft.com/.default"
         text = " ".join(part for part in str(value).replace(",", " ").split())
         return text or "https://graph.microsoft.com/.default"
+
+    @validator("exchange_login_mode", pre=True)
+    def _normalize_exchange_login_mode(cls, value: str | None) -> str:
+        if not value:
+            return "CLIENT"
+        normalized = str(value).strip().upper().replace("-", "_")
+        if normalized in {"CLIENT", "APPLICATION", "CLIENT_CREDENTIAL"}:
+            return "CLIENT"
+        if normalized in {"DELEGATED", "DEVICE", "DEVICE_CODE", "PERSONAL"}:
+            return "DELEGATED"
+        raise ValueError("EXCHANGE_LOGIN_MODE must be CLIENT or DELEGATED")
 
     @validator("imap_encryption", pre=True)
     def _normalize_imap_encryption(cls, value: str | bool | None) -> str:

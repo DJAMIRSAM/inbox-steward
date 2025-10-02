@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.database import get_session
 from app.models import CalendarEvent, ConflictLog, EmailMessage
 from app.services.actions import processor
-from app.services.email_client import email_client
+from app.services.email_client import email_client, exchange_auth_manager
 from app.services.notifications import notifier
 from app.services.ollama import classifier
 
@@ -46,6 +46,7 @@ def _empty_debug_results() -> dict[str, dict[str, object] | None]:
         "folders": None,
         "mail": None,
         "audit": None,
+        "exchange_auth": None,
     }
 
 
@@ -103,6 +104,14 @@ DEBUG_PROGRESS_STEPS: Dict[str, Dict[str, Any]] = {
             {"key": "ha_confirm", "label": "Await confirmation", "status": "pending"},
         ],
     },
+    "exchange_sign_in": {
+        "title": "Authorize Microsoft mailbox",
+        "steps": [
+            {"key": "exchange_start", "label": "Generate device login code", "status": "pending"},
+            {"key": "exchange_authorize", "label": "Await Microsoft approval", "status": "pending"},
+            {"key": "exchange_confirm", "label": "Store delegated tokens", "status": "pending"},
+        ],
+    },
 }
 
 
@@ -113,12 +122,22 @@ def _mail_backend_label() -> str:
 def _service_overview() -> Dict[str, Dict[str, Any]]:
     if settings.mail_backend == "EXCHANGE":
         mailbox_identity = settings.exchange_user_id or settings.imap_username or ""
-        mail_configured = bool(
-            settings.exchange_client_id
-            and settings.exchange_client_secret
-            and settings.exchange_tenant_id
-            and mailbox_identity
-        )
+        login_mode = settings.exchange_login_mode
+        account = None
+        auth_label = "OAuth2 client credential"
+        if login_mode == "DELEGATED":
+            account = exchange_auth_manager.current_account()
+            account_username = account.get("username") if account else ""
+            mailbox_identity = account_username or mailbox_identity
+            mail_configured = bool(settings.exchange_client_id and mailbox_identity and account)
+            auth_label = "OAuth2 delegated device login"
+        else:
+            mail_configured = bool(
+                settings.exchange_client_id
+                and settings.exchange_client_secret
+                and settings.exchange_tenant_id
+                and mailbox_identity
+            )
         mail_section = {
             "configured": mail_configured,
             "backend": "Exchange",
@@ -126,7 +145,9 @@ def _service_overview() -> Dict[str, Dict[str, Any]]:
             "mailbox": mailbox_identity,
             "poll": settings.poll_interval_seconds,
             "username": mailbox_identity,
-            "auth": "OAuth2 client credential",
+            "auth": auth_label,
+            "login_mode": login_mode,
+            "account": account.get("username") if account else None,
         }
     else:
         mail_section = {
@@ -177,19 +198,37 @@ def _mask_secret(value: str | None) -> str:
 def _environment_snapshot() -> Dict[str, Any]:
     if settings.mail_backend == "EXCHANGE":
         mailbox_identity = settings.exchange_user_id or settings.imap_username or ""
-        mail_env = {
-            "backend": "Exchange",
-            "identity": mailbox_identity,
-            "tenant": settings.exchange_tenant_id or "",
-            "client_id": _mask_secret(settings.exchange_client_id),
-            "scopes": settings.exchange_scope,
-            "configured": bool(
-                settings.exchange_client_id
-                and settings.exchange_client_secret
-                and settings.exchange_tenant_id
-                and mailbox_identity
-            ),
-        }
+        login_mode = settings.exchange_login_mode
+        if login_mode == "DELEGATED":
+            account = exchange_auth_manager.current_account()
+            account_email = account.get("username") if account else ""
+            identity = account_email or mailbox_identity
+            mail_env = {
+                "backend": "Exchange",
+                "identity": identity,
+                "tenant": settings.exchange_tenant_id or "consumers",
+                "client_id": _mask_secret(settings.exchange_client_id),
+                "scopes": settings.exchange_scope,
+                "login_mode": "Delegated",
+                "token_cache": str(settings.exchange_token_cache),
+                "configured": bool(settings.exchange_client_id and identity and account),
+                "account": account_email,
+            }
+        else:
+            mail_env = {
+                "backend": "Exchange",
+                "identity": mailbox_identity,
+                "tenant": settings.exchange_tenant_id or "",
+                "client_id": _mask_secret(settings.exchange_client_id),
+                "scopes": settings.exchange_scope,
+                "login_mode": "Client",
+                "configured": bool(
+                    settings.exchange_client_id
+                    and settings.exchange_client_secret
+                    and settings.exchange_tenant_id
+                    and mailbox_identity
+                ),
+            }
     else:
         mail_env = {
             "backend": "IMAP",
@@ -478,6 +517,76 @@ async def _perform_debug_action(
             fail("ha_confirm", "Awaiting confirmation failed")
             flash = {"status": "error", "message": result.get("error", "Home Assistant notification failed.")}
         results["home_assistant"] = result
+    elif action == "exchange_sign_in":
+        if settings.mail_backend != "EXCHANGE":
+            flash = {"status": "error", "message": "Exchange backend is not enabled."}
+            results["exchange_auth"] = {"ok": False, "error": "Exchange backend is disabled."}
+        elif settings.exchange_login_mode != "DELEGATED":
+            flash = {
+                "status": "error",
+                "message": "Microsoft sign-in is only available when EXCHANGE_LOGIN_MODE=DELEGATED.",
+            }
+            results["exchange_auth"] = {
+                "ok": False,
+                "error": "Switch EXCHANGE_LOGIN_MODE to DELEGATED to enable personal Microsoft accounts.",
+            }
+        else:
+            start("exchange_start", "Requesting device login from Microsoft…")
+            try:
+                flow = await asyncio.to_thread(exchange_auth_manager.initiate_device_flow)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Failed to start Microsoft device login")
+                fail("exchange_start", str(exc))
+                results["exchange_auth"] = {"ok": False, "error": str(exc)}
+                flash = {
+                    "status": "error",
+                    "message": str(exc) or "Unable to start Microsoft sign-in flow.",
+                }
+            else:
+                verification_uri = flow.get("verification_uri") or flow.get("verification_uri_complete")
+                user_code = flow.get("user_code")
+                complete("exchange_start", "Device code generated")
+                if verification_uri and user_code:
+                    start(
+                        "exchange_authorize",
+                        f"Visit {verification_uri} and enter code {user_code}",
+                    )
+                else:
+                    start("exchange_authorize", "Authorize the app in your browser")
+
+                try:
+                    await asyncio.to_thread(exchange_auth_manager.complete_device_flow, flow)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Microsoft device login failed")
+                    fail("exchange_authorize", str(exc))
+                    fail("exchange_confirm", "Authorization not completed")
+                    results["exchange_auth"] = {
+                        "ok": False,
+                        "verification_uri": verification_uri,
+                        "user_code": user_code,
+                        "error": str(exc),
+                    }
+                    flash = {
+                        "status": "error",
+                        "message": str(exc) or "Microsoft authorization failed.",
+                    }
+                else:
+                    complete("exchange_authorize", "Authorization granted")
+                    start("exchange_confirm", "Caching delegated tokens…")
+                    account = exchange_auth_manager.current_account()
+                    email_client.reset_connection()
+                    complete("exchange_confirm", "Mailbox ready to sync")
+                    account_email = account.get("username") if account else None
+                    flash = {
+                        "status": "success",
+                        "message": "Microsoft account authorized. Exchange mailbox is ready.",
+                    }
+                    results["exchange_auth"] = {
+                        "ok": True,
+                        "verification_uri": verification_uri,
+                        "user_code": user_code,
+                        "account": account_email,
+                    }
     elif action == "imap_diagnostics":
         start("imap_connect", "Connecting to mailbox…")
         result = await _mail_diagnostics()
@@ -618,7 +727,20 @@ async def dashboard(request: Request, templates: Jinja2Templates = Depends(get_t
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, templates: Jinja2Templates = Depends(get_templates)) -> HTMLResponse:
-    return templates.TemplateResponse("settings.html", {"request": request, "settings": settings})
+    exchange_account = None
+    if settings.mail_backend == "EXCHANGE" and settings.exchange_login_mode == "DELEGATED":
+        try:
+            account = exchange_auth_manager.current_account()
+        except Exception:  # noqa: BLE001
+            account = None
+        if account:
+            exchange_account = account.get("username")
+    context = {
+        "request": request,
+        "settings": settings,
+        "exchange_account": exchange_account,
+    }
+    return templates.TemplateResponse("settings.html", context)
 
 
 @router.get("/what-if", response_class=HTMLResponse)

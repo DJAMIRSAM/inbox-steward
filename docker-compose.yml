@@ -23,6 +23,8 @@ services:
       EXCHANGE_CLIENT_SECRET: "${EXCHANGE_CLIENT_SECRET:-}"
       EXCHANGE_USER_ID: "${EXCHANGE_USER_ID:-}"
       EXCHANGE_SCOPE: "${EXCHANGE_SCOPE:-https://graph.microsoft.com/.default}"
+      EXCHANGE_LOGIN_MODE: "${EXCHANGE_LOGIN_MODE:-CLIENT}"
+      EXCHANGE_TOKEN_CACHE: "${EXCHANGE_TOKEN_CACHE:-/data/exchange/token.json}"
       EXCHANGE_TIMEOUT: "${EXCHANGE_TIMEOUT:-30}"
       TIMEZONE: "${TIMEZONE:-America/Vancouver}"
       POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-120}"
@@ -37,6 +39,7 @@ services:
       - "${INBOX_STEWARD_PORT:-8003}:8000"
     volumes:
       - ./storage/pdfs:/data/pdfs
+      - ./storage/exchange:/data/exchange
     depends_on:
       - db
     networks:

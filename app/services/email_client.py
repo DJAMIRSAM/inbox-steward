@@ -4,21 +4,34 @@ import base64
 import email
 import logging
 import re
+import threading
 import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from email.header import decode_header, make_header
 from email.message import Message
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
 from imapclient import IMAPClient
 from imapclient.exceptions import IMAPClientError
-from msal import ConfidentialClientApplication
+from msal import (
+    ConfidentialClientApplication,
+    PublicClientApplication,
+    SerializableTokenCache,
+)
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_directory(path: Path) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to create directory for %s", path)
 
 
 class IMAPEmailBackend:
@@ -281,6 +294,112 @@ class IMAPEmailBackend:
         return re.sub(r"<[^>]+>", " ", html)
 
 
+class ExchangeAuthManager:
+    """Handles delegated Exchange authentication flows for Microsoft accounts."""
+
+    def __init__(self) -> None:
+        self._cache = SerializableTokenCache()
+        self._cache_path = Path(settings.exchange_token_cache)
+        self._lock = threading.Lock()
+        self._load_cache()
+
+    def _authority(self) -> str:
+        tenant = settings.exchange_tenant_id
+        if settings.exchange_login_mode == "DELEGATED":
+            tenant = tenant or "consumers"
+        if not tenant:
+            raise ValueError("EXCHANGE_TENANT_ID must be configured for Exchange client credential auth")
+        return f"{settings.exchange_authority}/{tenant}"
+
+    def _public_client(self) -> PublicClientApplication:
+        if not settings.exchange_client_id:
+            raise ValueError("EXCHANGE_CLIENT_ID must be configured for Exchange access")
+        return PublicClientApplication(
+            client_id=settings.exchange_client_id,
+            authority=self._authority(),
+            token_cache=self._cache,
+        )
+
+    def _scopes(self) -> List[str]:
+        scopes = settings.exchange_scopes
+        if scopes:
+            return scopes
+        return ["offline_access", "Mail.ReadWrite"]
+
+    def _load_cache(self) -> None:
+        try:
+            if self._cache_path.exists():
+                data = self._cache_path.read_text(encoding="utf-8")
+                if data:
+                    self._cache.deserialize(data)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to load Exchange token cache from %s", self._cache_path)
+
+    def _persist_cache(self) -> None:
+        if not self._cache.has_state_changed:
+            return
+        try:
+            _ensure_directory(self._cache_path)
+            payload = self._cache.serialize()
+            self._cache_path.write_text(payload, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to persist Exchange token cache to %s", self._cache_path)
+
+    def current_account(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            app = self._public_client()
+            accounts = app.get_accounts()
+            return accounts[0] if accounts else None
+
+    def acquire_delegated_token(self) -> tuple[str, int, Dict[str, Any]]:
+        with self._lock:
+            app = self._public_client()
+            accounts = app.get_accounts()
+            if not accounts:
+                raise RuntimeError(
+                    "No Microsoft account is signed in. Run the Microsoft sign-in flow from the Diagnostics tab."
+                )
+            result: Optional[Dict[str, Any]] = None
+            account_info: Optional[Dict[str, Any]] = None
+            for account in accounts:
+                result = app.acquire_token_silent(self._scopes(), account=account)
+                if result and result.get("access_token"):
+                    account_info = account
+                    break
+            else:  # noqa: PLW0120
+                raise RuntimeError("Unable to refresh Exchange delegated token. Re-authorize the mailbox.")
+
+            token = result.get("access_token") if result else None
+            if not token:
+                raise RuntimeError("Failed to acquire Exchange delegated access token.")
+            expires_in = int(result.get("expires_in", 3599)) if result else 3599
+            self._persist_cache()
+            return token, expires_in, account_info or {}
+
+    def initiate_device_flow(self) -> Dict[str, Any]:
+        if settings.exchange_login_mode != "DELEGATED":
+            raise RuntimeError("Device login is only available when EXCHANGE_LOGIN_MODE=DELEGATED")
+        with self._lock:
+            app = self._public_client()
+            flow = app.initiate_device_flow(scopes=self._scopes())
+            if "user_code" not in flow:
+                raise RuntimeError(flow.get("error_description") or "Unable to start device login flow")
+            return flow
+
+    def complete_device_flow(self, flow: Dict[str, Any]) -> Dict[str, Any]:
+        with self._lock:
+            app = self._public_client()
+            result = app.acquire_token_by_device_flow(flow)  # type: ignore[arg-type]
+            if not result or "access_token" not in result:
+                error = result.get("error_description") if isinstance(result, dict) else "Authorization failed"
+                raise RuntimeError(error or "Authorization failed")
+            self._persist_cache()
+            return result
+
+
+exchange_auth_manager = ExchangeAuthManager()
+
+
 class ExchangeGraphBackend:
     """Microsoft Graph-based mailbox backend for Exchange Online."""
 
@@ -291,6 +410,8 @@ class ExchangeGraphBackend:
         self._http = httpx.Client(timeout=settings.exchange_timeout)
         self._folder_cache: Optional[tuple[float, Dict[str, Dict[str, Optional[str]]]]] = None
         self._user_cache: Optional[Dict[str, Any]] = None
+        self._auth = exchange_auth_manager
+        self._account: Optional[Dict[str, Any]] = None
 
     def connect(self) -> bool:
         self._ensure_token()
@@ -308,16 +429,16 @@ class ExchangeGraphBackend:
 
     def move(self, uid: int | str, destination: str) -> None:
         folder = self._ensure_folder(destination)
-        path = f"/users/{self._user}/messages/{uid}/move"
+        path = f"{self._user_prefix}/messages/{uid}/move"
         payload = {"destinationId": folder["id"]}
         self._request("POST", path, json=payload)
 
     def flag(self, uid: int | str) -> None:
-        path = f"/users/{self._user}/messages/{uid}"
+        path = f"{self._user_prefix}/messages/{uid}"
         self._request("PATCH", path, json={"flag": {"flagStatus": "flagged"}})
 
     def unflag(self, uid: int | str) -> None:
-        path = f"/users/{self._user}/messages/{uid}"
+        path = f"{self._user_prefix}/messages/{uid}"
         self._request("PATCH", path, json={"flag": {"flagStatus": "notFlagged"}})
 
     def ensure_folder(self, folder: str) -> Dict[str, Any]:
@@ -335,9 +456,9 @@ class ExchangeGraphBackend:
                 parent_id = existing["id"]
                 continue
             if parent_id:
-                path = f"/users/{self._user}/mailFolders/{parent_id}/childFolders"
+                path = f"{self._user_prefix}/mailFolders/{parent_id}/childFolders"
             else:
-                path = f"/users/{self._user}/mailFolders"
+                path = f"{self._user_prefix}/mailFolders"
             created = self._request("POST", path, json={"displayName": part}) or {}
             folder_id = created.get("id")
             if not folder_id:
@@ -357,10 +478,11 @@ class ExchangeGraphBackend:
             user = self._get_user()
             inbox = self._request(
                 "GET",
-                f"/users/{self._user}/mailFolders/inbox",
+                f"{self._user_prefix}/mailFolders/inbox",
                 params={"$select": "displayName,totalItemCount,unreadItemCount"},
             )
             folders = self._load_folders()
+            mailbox_identity = self._mailbox_identity(user)
             return {
                 "ok": True,
                 "state": "connected",
@@ -368,7 +490,7 @@ class ExchangeGraphBackend:
                 "server": "graph.microsoft.com",
                 "encryption": "TLS",
                 "auth_type": "OAUTH2",
-                "mailbox": user.get("mail") or user.get("userPrincipalName"),
+                "mailbox": mailbox_identity,
                 "mailbox_status": {
                     "messages": inbox.get("totalItemCount", 0) if isinstance(inbox, dict) else 0,
                     "unseen": inbox.get("unreadItemCount", 0) if isinstance(inbox, dict) else 0,
@@ -378,6 +500,8 @@ class ExchangeGraphBackend:
                 "capabilities_error": None,
                 "backend": "EXCHANGE",
                 "folder_count": len(folders),
+                "login_mode": settings.exchange_login_mode,
+                "account": mailbox_identity,
             }
         except Exception as exc:  # noqa: BLE001
             logger.exception("Exchange diagnostics failed")
@@ -386,17 +510,19 @@ class ExchangeGraphBackend:
                 "state": "error",
                 "server": "graph.microsoft.com",
                 "auth_type": "OAUTH2",
-                "mailbox": self._user,
+                "mailbox": self._account_email() or settings.exchange_user_id or settings.imap_username,
                 "mailbox_error": str(exc),
                 "capabilities": [],
                 "capabilities_error": str(exc),
                 "backend": "EXCHANGE",
+                "login_mode": settings.exchange_login_mode,
             }
 
     def reset_connection(self) -> None:
         self._token = None
         self._folder_cache = None
         self._user_cache = None
+        self._account = None
         try:
             self._http.close()
         finally:
@@ -407,28 +533,33 @@ class ExchangeGraphBackend:
         if self._token and now < self._token[1]:
             return self._token[0]
 
-        if not (
-            settings.exchange_client_id
-            and settings.exchange_client_secret
-            and settings.exchange_tenant_id
-        ):
-            raise ValueError(
-                "Exchange OAuth credentials are not fully configured. "
-                "Set EXCHANGE_CLIENT_ID, EXCHANGE_CLIENT_SECRET, and EXCHANGE_TENANT_ID."
+        if settings.exchange_login_mode == "CLIENT":
+            if not (
+                settings.exchange_client_id
+                and settings.exchange_client_secret
+                and settings.exchange_tenant_id
+            ):
+                raise ValueError(
+                    "Exchange OAuth credentials are not fully configured. "
+                    "Set EXCHANGE_CLIENT_ID, EXCHANGE_CLIENT_SECRET, and EXCHANGE_TENANT_ID."
+                )
+            authority = f"{settings.exchange_authority}/{settings.exchange_tenant_id}"
+            app = ConfidentialClientApplication(
+                client_id=settings.exchange_client_id,
+                authority=authority,
+                client_credential=settings.exchange_client_secret,
             )
+            result = app.acquire_token_for_client(scopes=settings.exchange_scopes)
+            token = result.get("access_token")
+            if not token:
+                error = result.get("error_description") or result.get("error") or "unknown error"
+                raise RuntimeError(f"Failed to acquire Exchange token: {error}")
+            expires_in = int(result.get("expires_in", 3599))
+            self._token = (token, now + max(expires_in - 60, 60))
+            return token
 
-        authority = f"{settings.exchange_authority}/{settings.exchange_tenant_id}"
-        app = ConfidentialClientApplication(
-            client_id=settings.exchange_client_id,
-            authority=authority,
-            client_credential=settings.exchange_client_secret,
-        )
-        result = app.acquire_token_for_client(scopes=settings.exchange_scopes)
-        token = result.get("access_token")
-        if not token:
-            error = result.get("error_description") or result.get("error") or "unknown error"
-            raise RuntimeError(f"Failed to acquire Exchange token: {error}")
-        expires_in = int(result.get("expires_in", 3599))
+        token, expires_in, account = self._auth.acquire_delegated_token()
+        self._account = account
         self._token = (token, now + max(expires_in - 60, 60))
         return token
 
@@ -441,11 +572,30 @@ class ExchangeGraphBackend:
         }
 
     @property
-    def _user(self) -> str:
+    def _user_prefix(self) -> str:
+        if settings.exchange_login_mode == "DELEGATED" and not settings.exchange_user_id:
+            return "/me"
         user = settings.exchange_user_id or settings.imap_username
         if not user:
             raise ValueError("EXCHANGE_USER_ID or IMAP_USERNAME must be configured for Exchange access")
-        return user
+        return f"/users/{user}"
+
+    def _account_email(self) -> Optional[str]:
+        if self._account and self._account.get("username"):
+            return self._account.get("username")
+        account = self._auth.current_account()
+        if account:
+            return account.get("username")
+        return settings.exchange_user_id or settings.imap_username
+
+    def _mailbox_identity(self, user: Optional[Dict[str, Any]]) -> str:
+        if settings.exchange_login_mode == "DELEGATED":
+            return (self._account_email() or (user or {}).get("mail") or (user or {}).get("userPrincipalName") or "")
+        if user:
+            return user.get("mail") or user.get("userPrincipalName") or (
+                settings.exchange_user_id or settings.imap_username or ""
+            )
+        return settings.exchange_user_id or settings.imap_username or ""
 
     def _request(
         self,
@@ -524,7 +674,7 @@ class ExchangeGraphBackend:
             params["$filter"] = filter
         if top:
             params["$top"] = top
-        return self._paginate(f"/users/{self._user}/messages", params=params, top=top)
+        return self._paginate(f"{self._user_prefix}/messages", params=params, top=top)
 
     def _load_folders(self, force: bool = False) -> Dict[str, Dict[str, Optional[str]]]:
         if self._folder_cache and not force:
@@ -533,7 +683,7 @@ class ExchangeGraphBackend:
                 return cache
 
         data = self._paginate(
-            f"/users/{self._user}/mailFolders",
+            f"{self._user_prefix}/mailFolders",
             params={"$select": "id,displayName,parentFolderId"},
         )
         id_map: Dict[str, Dict[str, Optional[str]]] = {}
@@ -659,7 +809,7 @@ class ExchangeGraphBackend:
             return self._user_cache
         data = self._request(
             "GET",
-            f"/users/{self._user}",
+            self._user_prefix,
             params={"$select": "id,displayName,mail,userPrincipalName"},
         )
         self._user_cache = data

@@ -55,8 +55,11 @@
               {% endif %}
             </div>
             <div class="text-xs text-slate-500 dark:text-slate-400">
-              {{ mail.username or '—' }}{% if mail.auth %} &middot; {{ mail.auth }}{% endif %} &middot; poll {{ mail.poll }}s
+              {{ mail.username or '—' }}{% if mail.auth %} &middot; {{ mail.auth }}{% endif %}{% if mail.login_mode %} &middot; {{ mail.login_mode|title }} mode{% endif %} &middot; poll {{ mail.poll }}s
             </div>
+            {% if mail.account %}
+            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Signed in as {{ mail.account }}</div>
+            {% endif %}
           </dd>
         </div>
         <div class="flex items-center justify-between gap-3">
@@ -150,12 +153,22 @@
             {% if env.mail.backend == 'Exchange' %}
             <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Identity</div>
             <div class="font-mono text-xs break-all">{{ env.mail.identity or '—' }}</div>
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Mode</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.login_mode }}</div>
             <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Tenant</div>
             <div class="font-mono text-xs break-all">{{ env.mail.tenant or '—' }}</div>
             <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Client ID</div>
             <div class="font-mono text-xs">{{ env.mail.client_id }}</div>
             <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Scopes</div>
             <div class="font-mono text-xs break-words">{{ env.mail.scopes }}</div>
+            {% if env.mail.account %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Account</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.account }}</div>
+            {% endif %}
+            {% if env.mail.token_cache %}
+            <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-2">Token cache</div>
+            <div class="font-mono text-xs break-all">{{ env.mail.token_cache }}</div>
+            {% endif %}
             {% else %}
             <div class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Host</div>
             <div class="font-mono text-xs break-all">{{ env.mail.host }}</div>
@@ -346,7 +359,35 @@
     </div>
   </div>
 
-  <div class="mt-8 grid gap-6 md:grid-cols-2">
+  <div class="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+    {% if settings.mail_backend == 'EXCHANGE' and settings.exchange_login_mode == 'DELEGATED' %}
+    <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
+      <div>
+        <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Microsoft sign-in</h2>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Authorize the Exchange mailbox using Microsoft's device login flow.</p>
+      </div>
+      <form method="post" class="mt-auto" data-debug-form>
+        <input type="hidden" name="action" value="exchange_sign_in" />
+        <button type="submit" class="w-full px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg shadow-sm">Authorize mailbox</button>
+      </form>
+      <div class="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-2">
+        {% set ms = results.exchange_auth %}
+        {% if ms is none %}
+        <p class="text-slate-400 dark:text-slate-500">Launch the device login flow to link your Microsoft account.</p>
+        {% elif ms.ok %}
+        <p class="text-slate-700 dark:text-slate-200">Delegated tokens cached successfully.</p>
+        {% if ms.account %}
+        <p class="text-xs text-slate-500 dark:text-slate-400">Signed in as <span class="font-mono">{{ ms.account }}</span>.</p>
+        {% endif %}
+        {% else %}
+        <p class="text-rose-600 dark:text-rose-300">{{ ms.error }}</p>
+        {% if ms.verification_uri and ms.user_code %}
+        <p class="text-xs text-slate-500 dark:text-slate-400">Visit <span class="font-mono">{{ ms.verification_uri }}</span> and enter code <span class="font-mono">{{ ms.user_code }}</span>.</p>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
     <div class="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 flex flex-col gap-4">
       <div>
         <h2 class="text-lg font-medium text-slate-800 dark:text-slate-100">Ollama model</h2>

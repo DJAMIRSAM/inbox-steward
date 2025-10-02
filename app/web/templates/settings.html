@@ -10,8 +10,13 @@
       <ul class="mt-3 space-y-2 text-slate-500 dark:text-slate-400">
         {% if settings.mail_backend == 'EXCHANGE' %}
         <li><span class="font-semibold text-slate-700 dark:text-slate-200">Identity:</span> {{ settings.exchange_user_id or settings.imap_username }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Mode:</span> {{ settings.exchange_login_mode|title }}</li>
         <li><span class="font-semibold text-slate-700 dark:text-slate-200">Tenant:</span> {{ settings.exchange_tenant_id or '—' }}</li>
         <li><span class="font-semibold text-slate-700 dark:text-slate-200">Client ID:</span> {{ settings.exchange_client_id or '—' }}</li>
+        {% if exchange_account %}
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Signed in as:</span> {{ exchange_account }}</li>
+        <li><span class="font-semibold text-slate-700 dark:text-slate-200">Token cache:</span> {{ settings.exchange_token_cache }}</li>
+        {% endif %}
         {% else %}
         <li><span class="font-semibold text-slate-700 dark:text-slate-200">Host:</span> {{ settings.imap_host }}:{{ settings.imap_port }}</li>
         <li><span class="font-semibold text-slate-700 dark:text-slate-200">Mailbox:</span> {{ settings.imap_mailbox }}</li>

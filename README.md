@@ -40,7 +40,7 @@ Primary components:
 ## Getting started
 
 1. Copy `.env.example` to `.env` and fill in your mail + Home Assistant credentials.
-2. Review `docker-compose.yml` and update the mail (IMAP or Exchange), Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI. Set `MAIL_BACKEND` to `IMAP` (default) or `EXCHANGE`, then provide the corresponding credentials. For IMAP you can still tune `IMAP_ENCRYPTION` (`SSL`, `STARTTLS`, or `NONE`) and `IMAP_AUTH_TYPE` (`LOGIN` by default, or `XOAUTH2` if basic auth is blocked).
+2. Review `docker-compose.yml` and update the mail (IMAP or Exchange), Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI. Set `MAIL_BACKEND` to `IMAP` (default) or `EXCHANGE`, then provide the corresponding credentials. For IMAP you can still tune `IMAP_ENCRYPTION` (`SSL`, `STARTTLS`, or `NONE`) and `IMAP_AUTH_TYPE` (`LOGIN` by default, or `XOAUTH2` if basic auth is blocked). For Exchange you can choose an app-only flow (`EXCHANGE_LOGIN_MODE=CLIENT`) or the new delegated device login (`EXCHANGE_LOGIN_MODE=DELEGATED`) for personal Outlook.com accounts.
 3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8003}` by default.
 4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see Continuous image builds).
 
@@ -52,11 +52,13 @@ Primary components:
 3. In the Environment variables section add secrets for:
    - `MAIL_BACKEND` (`IMAP` or `EXCHANGE`)
    - For IMAP backends: `IMAP_USERNAME`, `IMAP_PASSWORD`
-   - For Exchange backends: `EXCHANGE_TENANT_ID`, `EXCHANGE_CLIENT_ID`, `EXCHANGE_CLIENT_SECRET`, and `EXCHANGE_USER_ID`
+   - For Exchange backends: `EXCHANGE_CLIENT_ID`, `EXCHANGE_USER_ID`, and either:
+     - (Business / app-only) `EXCHANGE_TENANT_ID`, `EXCHANGE_CLIENT_SECRET`, optional `EXCHANGE_SCOPE`
+     - (Personal Outlook.com) `EXCHANGE_LOGIN_MODE=DELEGATED`, delegated `EXCHANGE_SCOPE` (for example `offline_access Mail.ReadWrite Mail.ReadWrite.Shared`), and a writable `EXCHANGE_TOKEN_CACHE` path (e.g. `/data/exchange/token.json`)
    - `HOME_ASSISTANT_TOKEN`
    - (Optional, IMAP) `IMAP_ENCRYPTION` if your provider requires `STARTTLS` or an unencrypted connection.
    - (Optional, IMAP) `IMAP_AUTH_TYPE` and `IMAP_OAUTH2_TOKEN` if your provider requires OAuth 2.0 app passwords/tokens.
-   - (Optional, Exchange) `EXCHANGE_SCOPE` if you need custom Microsoft Graph scopes.
+   - (Optional, Exchange) `EXCHANGE_SCOPE` to override the default Graph scopes for either mode.
 4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8003 is already in use. Portainer will publish the UI on that port.
 5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
 6. Ensure your existing `ollama` container is attached to the same network or reachable at the hostname specified in `OLLAMA_ENDPOINT`.
@@ -65,15 +67,11 @@ Primary components:
 ### Mail backend configuration
 
 - **IMAP (default)** – Works with providers that still offer IMAP+SMTP app passwords. Supply `IMAP_HOST`, `IMAP_PORT`, `IMAP_USERNAME`, and `IMAP_PASSWORD`. Tune `IMAP_ENCRYPTION`, `IMAP_AUTH_TYPE`, and (if needed) `IMAP_OAUTH2_TOKEN` for OAuth-enabled tenants.
-- **Exchange Online (graph)** – Use when Outlook/Office365 disables IMAP. Create an Azure AD app registration with **Mail.ReadWrite** application permissions, grant admin consent, then configure:
-  - `MAIL_BACKEND=EXCHANGE`
-  - `EXCHANGE_TENANT_ID`
-  - `EXCHANGE_CLIENT_ID`
-  - `EXCHANGE_CLIENT_SECRET`
-  - `EXCHANGE_USER_ID` (UPN or primary SMTP of the mailbox)
-  - (Optional) `EXCHANGE_SCOPE` if you need to add delegated scopes beyond the default `https://graph.microsoft.com/.default`.
+- **Exchange Online / Outlook.com (Graph)** – Use when Outlook/Office365 disables IMAP.
+  - For business or shared mailboxes where you can grant application permissions: set `MAIL_BACKEND=EXCHANGE`, leave `EXCHANGE_LOGIN_MODE=CLIENT`, and provide `EXCHANGE_TENANT_ID`, `EXCHANGE_CLIENT_ID`, `EXCHANGE_CLIENT_SECRET`, and `EXCHANGE_USER_ID`. The default scope `https://graph.microsoft.com/.default` requests the app-only permissions you consented to.
+  - For personal Outlook.com accounts with mandatory MFA: set `MAIL_BACKEND=EXCHANGE`, `EXCHANGE_LOGIN_MODE=DELEGATED`, supply `EXCHANGE_CLIENT_ID`, `EXCHANGE_USER_ID` (or leave blank to rely on the signed-in account), and choose delegated scopes such as `offline_access Mail.ReadWrite Mail.ReadWrite.Shared`. Set `EXCHANGE_TOKEN_CACHE` to a persistent path (default `/data/exchange/token.json`). After the container starts, open the Diagnostics tab and use the **Microsoft sign-in** card to complete the device login.
 
-The diagnostics tab now reports which backend is active and surfaces OAuth errors, token expiry, and folder discovery health for Exchange accounts alongside the existing IMAP tooling.
+The diagnostics tab now reports which backend is active and surfaces OAuth errors, token expiry, delegated token status, and folder discovery health for Exchange accounts alongside the existing IMAP tooling. When delegated login is enabled you can launch the Microsoft device code flow directly from that page and confirm which account is linked.
 
 ### Manual Docker CLI deployment
 
@@ -82,7 +80,7 @@ git clone https://github.com/DJAMIRSAM/Inbox-Steward.git
 cd Inbox-Steward
 cp .env.example .env
 # edit .env
-mkdir -p storage/pdfs
+mkdir -p storage/pdfs storage/exchange
 sudo docker compose up -d --build
 ```
 
