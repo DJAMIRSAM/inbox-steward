@@ -58,6 +58,7 @@ Primary components:
    - `HOME_ASSISTANT_TOKEN`
    - (Optional, IMAP) `IMAP_ENCRYPTION` if your provider requires `STARTTLS` or an unencrypted connection.
    - (Optional, IMAP) `IMAP_AUTH_TYPE` and `IMAP_OAUTH2_TOKEN` if your provider requires OAuth 2.0 app passwords/tokens.
+   - (Optional, IMAP) `IMAP_ARCHIVE_MAILBOX` if your archive lives in a custom folder (default `Archive`).
    - (Optional, Exchange) `EXCHANGE_SCOPE` to override the default Graph scopes for either mode.
 4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8003 is already in use. Portainer will publish the UI on that port.
 5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.

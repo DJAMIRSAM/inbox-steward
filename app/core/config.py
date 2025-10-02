@@ -48,6 +48,7 @@ class Settings(BaseSettings):
         description="Bearer token for XOAUTH2 authentication",
     )
     imap_mailbox: str = Field("INBOX", env="IMAP_MAILBOX")
+    imap_archive_mailbox: str = Field("Archive", env="IMAP_ARCHIVE_MAILBOX")
 
     exchange_tenant_id: Optional[str] = Field(
         None,

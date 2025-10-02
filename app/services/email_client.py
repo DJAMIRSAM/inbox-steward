@@ -91,19 +91,11 @@ class IMAPEmailBackend:
         return self._client
 
     def fetch_seen_messages(self) -> List[Dict[str, Any]]:
-        client = self.connect()
-        client.select_folder(settings.imap_mailbox)
-        uids = client.search(["SEEN"])
-        if not uids:
-            return []
-        response = client.fetch(uids, ["RFC822", "FLAGS", "ENVELOPE", "BODYSTRUCTURE"])
-        messages: List[Dict[str, Any]] = []
-        for uid, data in response.items():
-            raw_message: bytes = data.get(b"RFC822", b"")
-            msg = email.message_from_bytes(raw_message)
-            parsed = self._parse_message(uid, msg, data)
-            messages.append(parsed)
-        return messages
+        return self._fetch_messages(settings.imap_mailbox, ["SEEN"])
+
+    def fetch_flagged_messages(self, folder: str) -> List[Dict[str, Any]]:
+        folder_name = folder or settings.imap_archive_mailbox
+        return self._fetch_messages(folder_name, ["FLAGGED"])
 
     def fetch_latest_message(self) -> Optional[Dict[str, Any]]:
         client = self.connect()
@@ -118,7 +110,7 @@ class IMAPEmailBackend:
             return None
         raw_message: bytes = data.get(b"RFC822", b"")
         msg = email.message_from_bytes(raw_message)
-        return self._parse_message(latest_uid, msg, data)
+        return self._parse_message(latest_uid, msg, data, settings.imap_mailbox)
 
     def move(self, uid: int | str, destination: str) -> None:
         client = self.connect()
@@ -230,7 +222,28 @@ class IMAPEmailBackend:
                 self._client = None
         self._folder_cache = None
 
-    def _parse_message(self, uid: int, message: Message, metadata: Dict[bytes, Any]) -> Dict[str, Any]:
+    def _fetch_messages(self, folder: str, criteria: List[str]) -> List[Dict[str, Any]]:
+        client = self.connect()
+        try:
+            client.select_folder(folder)
+        except IMAPClientError:
+            logger.warning("Folder %s is unavailable for fetch", folder, exc_info=True)
+            return []
+        uids = client.search(criteria)
+        if not uids:
+            return []
+        response = client.fetch(uids, ["RFC822", "FLAGS", "ENVELOPE", "BODYSTRUCTURE"])
+        messages: List[Dict[str, Any]] = []
+        for uid, data in response.items():
+            raw_message: bytes = data.get(b"RFC822", b"")
+            msg = email.message_from_bytes(raw_message)
+            parsed = self._parse_message(uid, msg, data, folder)
+            messages.append(parsed)
+        return messages
+
+    def _parse_message(
+        self, uid: int, message: Message, metadata: Dict[bytes, Any], folder: str
+    ) -> Dict[str, Any]:
         subject = self._decode(message.get("Subject", ""))
         sender = self._decode(message.get("From", ""))
         to_recipients = self._decode(message.get("To", ""))
@@ -254,7 +267,7 @@ class IMAPEmailBackend:
             "body": body_text,
             "received_at": received_at.isoformat(),
             "raw": message.as_string(),
-            "folder": settings.imap_mailbox,
+            "folder": folder,
         }
 
     def _decode(self, value: str) -> str:
