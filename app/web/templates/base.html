@@ -108,11 +108,28 @@
           );
         };
 
+        const syncLegacyThemePreference = (mode, resolved) => {
+          try {
+            if (mode === 'auto') {
+              localStorage.removeItem(LEGACY_THEME_KEY);
+              return;
+            }
+            if (resolved === 'light') {
+              localStorage.setItem(LEGACY_THEME_KEY, 'light');
+            } else {
+              localStorage.setItem(LEGACY_THEME_KEY, 'dark');
+            }
+          } catch (error) {
+            // Ignore persistence errors for legacy theme storage.
+          }
+        };
+
         const setThemeSettings = (updates = {}, options = {}) => {
           const { persist = true, notify = true } = options;
           themeSettings = sanitizeSettings({ ...themeSettings, ...updates });
           const resolved = resolveTheme(themeSettings);
           applyThemeClasses(resolved);
+          syncLegacyThemePreference(themeSettings.mode, resolved);
           if (persist) {
             try {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(themeSettings));
@@ -126,7 +143,9 @@
           return resolved;
         };
 
-        applyThemeClasses(resolveTheme(themeSettings));
+        const initialResolved = resolveTheme(themeSettings);
+        applyThemeClasses(initialResolved);
+        syncLegacyThemePreference(themeSettings.mode, initialResolved);
 
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', () => {
@@ -170,14 +189,18 @@
               }
             }
             themeSettings = nextSettings;
-            applyThemeClasses(resolveTheme(themeSettings));
+            const resolved = resolveTheme(themeSettings);
+            applyThemeClasses(resolved);
+            syncLegacyThemePreference(themeSettings.mode, resolved);
             dispatchThemeChange();
           }
         });
 
         const handleSystemThemeChange = () => {
           if (themeSettings.mode === 'auto') {
-            applyThemeClasses(resolveTheme(themeSettings));
+            const resolved = resolveTheme(themeSettings);
+            applyThemeClasses(resolved);
+            syncLegacyThemePreference(themeSettings.mode, resolved);
             dispatchThemeChange();
           }
         };
