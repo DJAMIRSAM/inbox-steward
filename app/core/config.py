@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     pdf_temp_dir: Path = Field(Path("/tmp/pdf-cache"), env="PDF_TEMP_DIR")
 
     class Config:
-        env_file = ".env"
+        env_file = "stack.env"
         env_file_encoding = "utf-8"
         case_sensitive = False
 
