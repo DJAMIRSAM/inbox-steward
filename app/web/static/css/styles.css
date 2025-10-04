@@ -409,13 +409,19 @@ body.mobile-nav-open {
   border-style: solid;
   border-color: rgba(99, 102, 241, 0.65);
   border-top-color: transparent;
+  --spinner-scale: 1;
+  --spinner-translate-y: 0px;
+  transform: translateY(var(--spinner-translate-y)) scale(var(--spinner-scale)) rotate(0deg);
+  transform-origin: center;
   animation: preloader-spin 1s linear infinite;
-  transition: opacity 0.35s ease, transform 0.35s ease;
+  transition: opacity 0.35s ease;
+  will-change: transform, opacity;
 }
 
 .preloader.is-launching .preloader-spinner {
+  --spinner-scale: 0.65;
+  --spinner-translate-y: 8px;
   opacity: 0;
-  transform: scale(0.65) translateY(8px);
 }
 
 .preloader-text {
@@ -858,8 +864,11 @@ body.mobile-nav-open {
 }
 
 @keyframes preloader-spin {
-  to {
-    transform: rotate(360deg);
+  0% {
+    transform: translateY(var(--spinner-translate-y)) scale(var(--spinner-scale)) rotate(0deg);
+  }
+  100% {
+    transform: translateY(var(--spinner-translate-y)) scale(var(--spinner-scale)) rotate(360deg);
   }
 }
 
