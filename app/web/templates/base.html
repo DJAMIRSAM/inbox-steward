@@ -291,7 +291,7 @@
           preloader.parentElement.removeChild(preloader);
         }
       } else {
-        const PRELOADER_MIN_MS = 900;
+        const PRELOADER_MIN_MS = 1400;
         const PRELOADER_FAILSAFE_MS = 7000;
         const preloaderStart = performance.now();
         let preloaderLaunchStarted = false;
@@ -307,7 +307,7 @@
             if (preloader && preloader.parentElement) {
               preloader.parentElement.removeChild(preloader);
             }
-          }, 900);
+          }, 1100);
         };
 
         const launchPreloader = () => {
@@ -318,7 +318,7 @@
           preloaderLaunchStarted = true;
           preloader.classList.add('is-launching');
           document.body.classList.remove('preloader-active');
-          window.setTimeout(removePreloader, 820);
+          window.setTimeout(removePreloader, 1250);
         };
 
         const finishPreloader = () => {

@@ -319,14 +319,16 @@ body.mobile-nav-open {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at top, rgba(99, 102, 241, 0.18), rgba(15, 23, 42, 0.9));
+  background-color: rgba(15, 23, 42, 0.96);
+  background-image: radial-gradient(circle at top, rgba(99, 102, 241, 0.22), rgba(15, 23, 42, 0.9));
   z-index: 100;
   transition: opacity 0.45s ease, visibility 0.45s ease;
 }
 
 .dark .preloader,
 .oled .preloader {
-  background: radial-gradient(circle at top, rgba(99, 102, 241, 0.22), rgba(2, 6, 23, 0.94));
+  background-color: rgba(2, 6, 23, 0.96);
+  background-image: radial-gradient(circle at top, rgba(99, 102, 241, 0.28), rgba(2, 6, 23, 0.95));
 }
 
 .preloader.is-launching {
@@ -375,7 +377,7 @@ body.mobile-nav-open {
 }
 
 .preloader.is-launching .preloader-logo {
-  animation: boat-launch 0.8s cubic-bezier(0.45, 0, 0.75, 1) forwards;
+  animation: boat-launch 1.1s cubic-bezier(0.45, 0, 0.75, 1) forwards;
 }
 
 .preloader-logo.is-hidden {
@@ -440,12 +442,12 @@ body.mobile-nav-open {
     transform: translateX(0) rotate(0deg);
     opacity: 1;
   }
-  40% {
-    transform: translate(18px, -4px) rotate(-2deg);
+  35% {
+    transform: translate(22px, -5px) rotate(-2.5deg);
     opacity: 1;
   }
   100% {
-    transform: translate(140vw, -18px) rotate(-5deg);
+    transform: translate(calc(100vw + 140px), -22px) rotate(-6deg);
     opacity: 0;
   }
 }
