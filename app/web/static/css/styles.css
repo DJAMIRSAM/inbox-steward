@@ -316,19 +316,23 @@ body.mobile-nav-open {
 .preloader {
   position: fixed;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(15, 23, 42, 0.96);
-  background-image: radial-gradient(circle at top, rgba(99, 102, 241, 0.22), rgba(15, 23, 42, 0.9));
-  z-index: 100;
+  display: grid;
+  place-items: center;
+  background-color: #0f172a;
+  background-image: radial-gradient(circle at top, rgba(99, 102, 241, 0.22), rgba(15, 23, 42, 0.92));
+  z-index: 9999;
   transition: opacity 0.45s ease, visibility 0.45s ease;
 }
 
 .dark .preloader,
 .oled .preloader {
-  background-color: rgba(2, 6, 23, 0.96);
-  background-image: radial-gradient(circle at top, rgba(99, 102, 241, 0.28), rgba(2, 6, 23, 0.95));
+  background-color: #020617;
+  background-image: radial-gradient(circle at top, rgba(99, 102, 241, 0.3), rgba(2, 6, 23, 0.96));
+}
+
+.oled .preloader {
+  background-color: #000;
+  background-image: none;
 }
 
 .preloader.is-launching {
@@ -348,9 +352,9 @@ body.mobile-nav-open {
   gap: 1.25rem;
   padding: 2.75rem 3rem;
   border-radius: 1.5rem;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 25px 60px -25px rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(12px);
+  background: rgba(15, 23, 42, 0.82);
+  box-shadow: 0 25px 60px -25px rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(14px);
   text-align: center;
   transform: translateZ(0);
 }
@@ -361,19 +365,30 @@ body.mobile-nav-open {
 
 .dark .preloader-content,
 .oled .preloader-content {
-  background: rgba(15, 23, 42, 0.82);
-  box-shadow: 0 25px 60px -30px rgba(15, 23, 42, 0.65);
+  background: rgba(2, 6, 23, 0.88);
+  box-shadow: 0 25px 60px -28px rgba(15, 23, 42, 0.75);
+}
+
+.oled .preloader-content {
+  background: rgba(0, 0, 0, 0.92);
+  box-shadow: 0 25px 60px -32px rgba(15, 23, 42, 0.7);
 }
 
 .preloader-logo {
   width: 72px;
   height: 72px;
   object-fit: contain;
-  filter: drop-shadow(0 10px 25px rgba(79, 70, 229, 0.35));
+  --preloader-logo-filter: drop-shadow(0 10px 25px rgba(79, 70, 229, 0.35));
+  filter: var(--preloader-logo-filter);
   transition: opacity 0.3s ease;
   animation: boat-rock 3.6s ease-in-out infinite;
   transform-origin: 50% 70%;
   will-change: transform, opacity;
+}
+
+.dark .preloader-logo,
+.oled .preloader-logo {
+  --preloader-logo-filter: brightness(0) invert(1) drop-shadow(0 10px 28px rgba(129, 140, 248, 0.55));
 }
 
 .preloader.is-launching .preloader-logo {
@@ -405,13 +420,8 @@ body.mobile-nav-open {
 .preloader-text {
   font-size: 0.9rem;
   font-weight: 500;
-  color: rgba(15, 23, 42, 0.75);
+  color: rgba(226, 232, 240, 0.9);
   transition: opacity 0.35s ease, transform 0.35s ease;
-}
-
-.dark .preloader-text,
-.oled .preloader-text {
-  color: rgba(226, 232, 240, 0.85);
 }
 
 .preloader.is-launching .preloader-text {
@@ -443,11 +453,11 @@ body.mobile-nav-open {
     opacity: 1;
   }
   35% {
-    transform: translate(22px, -5px) rotate(-2.5deg);
+    transform: translate(-22px, -5px) rotate(2.5deg);
     opacity: 1;
   }
   100% {
-    transform: translate(calc(100vw + 140px), -22px) rotate(-6deg);
+    transform: translate(calc(-100vw - 140px), -22px) rotate(6deg);
     opacity: 0;
   }
 }

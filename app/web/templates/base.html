@@ -27,11 +27,19 @@
           );
         };
 
+        const syncBodyTheme = (mode) => {
+          const body = document.body;
+          if (body) {
+            body.dataset.theme = mode;
+          }
+        };
+
         const apply = (mode, persist) => {
           const next = cycle.includes(mode) ? mode : 'light';
           root.classList.remove('dark', 'oled');
           classMap[next].forEach((cls) => root.classList.add(cls));
           root.dataset.theme = next;
+          syncBodyTheme(next);
           root.style.colorScheme = next === 'light' ? 'light' : 'dark';
           if (persist) {
             try {
@@ -58,10 +66,22 @@
         const initialTheme = getInitialTheme();
         apply(initialTheme, false);
 
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', () => {
+            syncBodyTheme(root.dataset.theme || initialTheme);
+          });
+        } else {
+          syncBodyTheme(root.dataset.theme || initialTheme);
+        }
+
+        const getCycle = () => [...cycle];
+
         window.__themeController = {
           apply: (mode) => apply(mode, true),
           current: () => root.dataset.theme || 'light',
-          cycle: [...cycle],
+          get cycle() {
+            return getCycle();
+          },
         };
 
         window.addEventListener('storage', (event) => {
@@ -115,7 +135,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <link rel="stylesheet" href="/static/css/styles.css" />
   </head>
-  <body class="bg-slate-100 dark:bg-slate-950 min-h-screen font-[Inter] text-slate-800 dark:text-slate-100 transition-colors preloader-active">
+  <body class="bg-white dark:bg-slate-950 min-h-screen font-[Inter] text-slate-800 dark:text-slate-100 transition-colors preloader-active">
     <div id="preloader" class="preloader" role="status" aria-live="polite">
       <div class="preloader-content">
         <img
