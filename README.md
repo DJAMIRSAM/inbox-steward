@@ -39,8 +39,8 @@ Primary components:
 
 ## Getting started
 
-1. Copy `.env.example` to `.env` and fill in your mail + Home Assistant credentials.
-2. Review `docker-compose.yml` and update the mail (IMAP or Exchange), Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `.env` if you need a different host port for the UI. Set `MAIL_BACKEND` to `IMAP` (default) or `EXCHANGE`, then provide the corresponding credentials. For IMAP you can still tune `IMAP_ENCRYPTION` (`SSL`, `STARTTLS`, or `NONE`) and `IMAP_AUTH_TYPE` (`LOGIN` by default, or `XOAUTH2` if basic auth is blocked). For Exchange you can choose an app-only flow (`EXCHANGE_LOGIN_MODE=CLIENT`) or the new delegated device login (`EXCHANGE_LOGIN_MODE=DELEGATED`) for personal Outlook.com accounts.
+1. Review `stack.env` and fill in your mail + Home Assistant credentials.
+2. Review `docker-compose.yml` and update the mail (IMAP or Exchange), Home Assistant, and Ollama settings as needed. Adjust `INBOX_STEWARD_PORT` in your `stack.env` if you need a different host port for the UI. Set `MAIL_BACKEND` to `IMAP` (default) or `EXCHANGE`, then provide the corresponding credentials. For IMAP you can still tune `IMAP_ENCRYPTION` (`SSL`, `STARTTLS`, or `NONE`) and `IMAP_AUTH_TYPE` (`LOGIN` by default, or `XOAUTH2` if basic auth is blocked). For Exchange you can choose an app-only flow (`EXCHANGE_LOGIN_MODE=CLIENT`) or the new delegated device login (`EXCHANGE_LOGIN_MODE=DELEGATED`) for personal Outlook.com accounts.
 3. On a host running Docker/Portainer, deploy the stack (see below). The web UI appears at `http://localhost:${INBOX_STEWARD_PORT:-8003}` by default.
 4. (Optional) If you prefer to skip local builds, pull the prebuilt container published to GitHub Container Registry (see Continuous image builds).
 
@@ -58,6 +58,7 @@ Primary components:
    - `HOME_ASSISTANT_TOKEN`
    - (Optional, IMAP) `IMAP_ENCRYPTION` if your provider requires `STARTTLS` or an unencrypted connection.
    - (Optional, IMAP) `IMAP_AUTH_TYPE` and `IMAP_OAUTH2_TOKEN` if your provider requires OAuth 2.0 app passwords/tokens.
+   - (Optional, IMAP) `IMAP_ARCHIVE_MAILBOX` if your archive lives in a custom folder (default `Archive`).
    - (Optional, Exchange) `EXCHANGE_SCOPE` to override the default Graph scopes for either mode.
 4. (Optional) Override `INBOX_STEWARD_PORT` if host port 8003 is already in use. Portainer will publish the UI on that port.
 5. Deploy the stack. Portainer will start three containers: `inbox-steward`, `inbox-steward-db`, and `inbox-steward-redis`.
@@ -78,8 +79,7 @@ The diagnostics tab now reports which backend is active and surfaces OAuth error
 ```bash
 git clone https://github.com/DJAMIRSAM/Inbox-Steward.git
 cd Inbox-Steward
-cp .env.example .env
-# edit .env
+# edit stack.env with your credentials
 mkdir -p storage/pdfs storage/exchange
 sudo docker compose up -d --build
 ```

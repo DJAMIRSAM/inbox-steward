@@ -28,23 +28,48 @@ class ActionProcessor:
 
     async def process_seen_messages(self) -> None:
         messages = email_client.fetch_seen_messages()
-        if not messages:
-            return
-        logger.info("Processing %s seen messages", len(messages))
-        for message in messages:
-            await self._handle_message(message)
-        logger.debug("Processed %s messages", len(messages))
+        if messages:
+            logger.info("Processing %s seen messages", len(messages))
+            for message in messages:
+                await self._handle_message(message)
+            logger.debug("Processed %s messages", len(messages))
+        await self._process_archive_followups()
 
     async def _handle_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
         context = self._build_prompt_context(message)
         classification = await classifier.classify(context)
         session_id = self._session_id(message)
-        self._persist_email(message, classification, session_id)
+        record = self._persist_email(message, classification, session_id)
+        session_id = record.session_id or session_id
         await self._apply_actions(message, classification, session_id)
         token = self._ensure_undo_token(session_id)
         if token:
             logger.debug("Undo token ready for session %s", session_id)
         return classification
+
+    async def _process_archive_followups(self) -> None:
+        archive_folder = settings.imap_archive_mailbox
+        if not archive_folder:
+            return
+        try:
+            messages = email_client.fetch_flagged_messages(archive_folder)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to fetch flagged messages from %s", archive_folder)
+            return
+        if not messages:
+            return
+        logger.info("Processing %s flagged messages from %s", len(messages), archive_folder)
+        for message in messages:
+            snapshot = self._load_email_snapshot(message)
+            existing_session = snapshot.get("session_id") if snapshot else None
+            classification = snapshot.get("classification") if snapshot else None
+            session_id = existing_session or self._session_id(message)
+            if not classification:
+                context = self._build_prompt_context(message)
+                classification = await classifier.classify(context)
+            record = self._persist_email(message, classification or {}, session_id)
+            session_id = record.session_id or session_id
+            await self._apply_actions(message, classification or {}, session_id)
 
     def _build_prompt_context(self, message: Dict[str, Any]) -> Dict[str, Any]:
         with get_session() as session:
@@ -65,9 +90,20 @@ class ActionProcessor:
             "current_folder": message.get("folder", settings.imap_mailbox),
         }
 
-    def _persist_email(self, message: Dict[str, Any], classification: Dict[str, Any], session_id: str) -> None:
+    def _persist_email(
+        self, message: Dict[str, Any], classification: Dict[str, Any], session_id: str
+    ) -> EmailMessage:
+        uid = str(message.get("uid")) if message.get("uid") is not None else None
+        message_id = message.get("message_id")
+        now = datetime.now(UTC)
         with get_session() as session:
-            db_obj = session.get(EmailMessage, message["uid"])
+            db_obj = session.get(EmailMessage, uid) if uid else None
+            if not db_obj and message_id:
+                db_obj = session.exec(
+                    select(EmailMessage).where(EmailMessage.message_id == message_id)
+                ).first()
+                if db_obj and uid:
+                    db_obj.uid = uid
             if not db_obj:
                 received_at = datetime.fromisoformat(message["received_at"])
                 if received_at.tzinfo:
@@ -86,7 +122,8 @@ class ActionProcessor:
                     folder=message.get("folder", settings.imap_mailbox),
                 )
             db_obj.classification = classification
-            db_obj.updated_at = datetime.now(UTC)
+            db_obj.updated_at = now
+            db_obj.last_seen_at = now
             db_obj.folder = message.get("folder", settings.imap_mailbox)
             meta = classification.get("meta") or {}
             review = classification.get("review") or {}
@@ -100,6 +137,28 @@ class ActionProcessor:
             db_obj.target_folder = target_folder
             session.add(db_obj)
             session.commit()
+            session.refresh(db_obj)
+            return db_obj
+
+    def _load_email_snapshot(self, message: Dict[str, Any]) -> Dict[str, Any] | None:
+        uid = str(message.get("uid")) if message.get("uid") is not None else None
+        message_id = message.get("message_id")
+        with get_session() as session:
+            db_obj = session.get(EmailMessage, uid) if uid else None
+            if not db_obj and message_id:
+                db_obj = session.exec(
+                    select(EmailMessage).where(EmailMessage.message_id == message_id)
+                ).first()
+            if not db_obj:
+                return None
+            return {
+                "uid": db_obj.uid,
+                "message_id": db_obj.message_id,
+                "classification": db_obj.classification,
+                "session_id": db_obj.session_id,
+                "sender": db_obj.sender,
+                "folder": db_obj.folder,
+            }
 
     async def _apply_actions(
         self, message: Dict[str, Any], classification: Dict[str, Any], session_id: str
@@ -214,9 +273,10 @@ class ActionProcessor:
 
     def full_sort(self) -> Dict[str, Any]:
         logger.info("Running full sort sweep")
+        plan = defaultdict(list)
+        self._apply_archive_followups(plan)
         with get_session() as session:
             emails = session.exec(select(EmailMessage)).all()
-        plan = defaultdict(list)
         for email_obj in emails:
             classification = email_obj.classification or {}
             action = self._extract_email_action(classification)
@@ -237,6 +297,46 @@ class ActionProcessor:
             )
             plan[destination].append(email_obj.uid)
         return {"moves": dict(plan)}
+
+    def _apply_archive_followups(self, plan: defaultdict[str, list[str]]) -> None:
+        archive_folder = settings.imap_archive_mailbox
+        if not archive_folder:
+            return
+        try:
+            messages = email_client.fetch_flagged_messages(archive_folder)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to sweep flagged messages from %s", archive_folder)
+            return
+        for message in messages:
+            snapshot = self._load_email_snapshot(message)
+            if not snapshot:
+                continue
+            classification = snapshot.get("classification") or {}
+            action = self._extract_email_action(classification)
+            if not action:
+                continue
+            destination = action.get("folder_path")
+            if not destination:
+                continue
+            try:
+                email_client.ensure_folder(destination)
+                email_client.move(message["uid"], destination)
+                email_client.unflag(message["uid"])
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to move %s to %s during archive sweep", message.get("uid"), destination)
+                continue
+            self._persist_folder_hint(
+                {"sender": snapshot.get("sender", ""), "folder": message.get("folder", archive_folder)},
+                destination,
+                action.get("confidence") or 0.0,
+            )
+            plan[destination].append(str(message.get("uid")))
+            session_id = snapshot.get("session_id") or self._session_id(message)
+            self._persist_email(
+                {**message, "folder": destination},
+                classification,
+                session_id,
+            )
 
     def what_if(self) -> Dict[str, Any]:
         logger.info("Generating what-if plan")
@@ -326,6 +426,20 @@ class ActionProcessor:
         lane = action.get("lane") or "ignore"
         destination = action.get("folder_path")
         confidence = action.get("confidence") or 0.0
+        current_folder = message.get("folder", settings.imap_mailbox)
+        move_now_raw = action.get("move_now")
+        if move_now_raw is None:
+            move_now = lane == "quick"
+        else:
+            move_now = bool(move_now_raw)
+        flag_raw = action.get("flag")
+        if flag_raw is None:
+            flag = lane == "sticky"
+        else:
+            flag = bool(flag_raw)
+        if lane == "sticky" and current_folder not in {settings.imap_mailbox, None}:
+            move_now = True
+            flag = False
         if lane == "ignore":
             logger.debug("Skipping ignore lane for %s", uid)
             return
@@ -351,28 +465,28 @@ class ActionProcessor:
             email_client.ensure_folder(destination)
         moved = False
         if lane == "sticky":
-            if action.get("flag", True):
+            if flag:
                 email_client.flag(uid)
             else:
                 email_client.unflag(uid)
-            if action.get("move_now"):
+            if move_now:
                 email_client.ensure_folder(destination)
                 email_client.move(uid, destination)
                 moved = True
         else:
-            if action.get("flag"):
+            if flag:
                 email_client.flag(uid)
             else:
                 email_client.unflag(uid)
-            if action.get("move_now"):
+            if move_now:
                 email_client.ensure_folder(destination)
                 email_client.move(uid, destination)
                 moved = True
         log_payload = {
             "lane": lane,
             "destination": destination,
-            "move_now": action.get("move_now"),
-            "flag": action.get("flag"),
+            "move_now": move_now,
+            "flag": flag,
             "confidence": confidence,
             "meta": meta,
             "source": message.get("folder", settings.imap_mailbox),

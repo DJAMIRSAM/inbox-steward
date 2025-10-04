@@ -11,30 +11,207 @@
     <script>
       (function () {
         const root = document.documentElement;
-        const cycle = ['light', 'dark', 'oled'];
-        const apply = (mode, persist) => {
+        const prefersDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const STORAGE_KEY = 'inbox-steward:theme-settings';
+        const LEGACY_THEME_KEY = 'theme';
+        const manualModes = ['light', 'dark', 'oled'];
+        const classMap = {
+          light: [],
+          dark: ['dark'],
+          oled: ['dark', 'oled'],
+        };
+
+        const defaultSettings = {
+          mode: 'auto',
+          autoDark: 'dark',
+        };
+
+        const syncBodyTheme = (mode) => {
+          const body = document.body;
+          if (body) {
+            body.dataset.theme = mode;
+          }
+        };
+
+        const applyThemeClasses = (theme) => {
+          const next = manualModes.includes(theme) ? theme : 'light';
           root.classList.remove('dark', 'oled');
-          if (mode === 'dark') {
-            root.classList.add('dark');
+          classMap[next].forEach((cls) => root.classList.add(cls));
+          root.dataset.theme = next;
+          syncBodyTheme(next);
+          root.style.colorScheme = next === 'light' ? 'light' : 'dark';
+        };
+
+        const sanitizeSettings = (settings) => {
+          const sanitized = { ...defaultSettings };
+          if (settings && typeof settings === 'object') {
+            const { mode, autoDark } = settings;
+            if (mode && (manualModes.includes(mode) || mode === 'auto')) {
+              sanitized.mode = mode;
+            }
+            if (autoDark && (autoDark === 'dark' || autoDark === 'oled')) {
+              sanitized.autoDark = autoDark;
+            }
           }
-          if (mode === 'oled') {
-            root.classList.add('dark');
-            root.classList.add('oled');
+          return sanitized;
+        };
+
+        const resolveTheme = (settings) => {
+          if (settings.mode === 'auto') {
+            return prefersDarkQuery.matches ? settings.autoDark : 'light';
           }
-          root.dataset.theme = mode;
+          return manualModes.includes(settings.mode) ? settings.mode : 'light';
+        };
+
+        const migrateLegacySettings = () => {
+          try {
+            const legacy = localStorage.getItem(LEGACY_THEME_KEY);
+            if (legacy && manualModes.includes(legacy)) {
+              const migrated = sanitizeSettings({ mode: legacy });
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+              localStorage.removeItem(LEGACY_THEME_KEY);
+              return migrated;
+            }
+          } catch (error) {
+            // Ignore migration errors and fall back to defaults.
+          }
+          return null;
+        };
+
+        const loadSettings = () => {
+          try {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+              return sanitizeSettings(JSON.parse(stored));
+            }
+          } catch (error) {
+            // Ignore parse/storage errors.
+          }
+          const migrated = migrateLegacySettings();
+          if (migrated) {
+            return migrated;
+          }
+          return { ...defaultSettings };
+        };
+
+        let themeSettings = loadSettings();
+
+        const dispatchThemeChange = () => {
+          document.dispatchEvent(
+            new CustomEvent('themechange', {
+              detail: {
+                theme: root.dataset.theme || 'light',
+                mode: themeSettings.mode,
+                autoDark: themeSettings.autoDark,
+              },
+            }),
+          );
+        };
+
+        const syncLegacyThemePreference = (mode, resolved) => {
+          try {
+            if (mode === 'auto') {
+              localStorage.removeItem(LEGACY_THEME_KEY);
+              return;
+            }
+            if (resolved === 'light') {
+              localStorage.setItem(LEGACY_THEME_KEY, 'light');
+            } else {
+              localStorage.setItem(LEGACY_THEME_KEY, 'dark');
+            }
+          } catch (error) {
+            // Ignore persistence errors for legacy theme storage.
+          }
+        };
+
+        const setThemeSettings = (updates = {}, options = {}) => {
+          const { persist = true, notify = true } = options;
+          themeSettings = sanitizeSettings({ ...themeSettings, ...updates });
+          const resolved = resolveTheme(themeSettings);
+          applyThemeClasses(resolved);
+          syncLegacyThemePreference(themeSettings.mode, resolved);
           if (persist) {
-            localStorage.setItem('theme', mode);
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(themeSettings));
+            } catch (error) {
+              // Ignore persistence errors.
+            }
+          }
+          if (notify) {
+            dispatchThemeChange();
+          }
+          return resolved;
+        };
+
+        const initialResolved = resolveTheme(themeSettings);
+        applyThemeClasses(initialResolved);
+        syncLegacyThemePreference(themeSettings.mode, initialResolved);
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', () => {
+            syncBodyTheme(root.dataset.theme || resolveTheme(themeSettings));
+          });
+        } else {
+          syncBodyTheme(root.dataset.theme || resolveTheme(themeSettings));
+        }
+
+        window.__themeController = {
+          apply: (mode) => {
+            if (mode === 'auto' || manualModes.includes(mode)) {
+              return setThemeSettings({ mode });
+            }
+            return root.dataset.theme || 'light';
+          },
+          current: () => root.dataset.theme || resolveTheme(themeSettings),
+          mode: () => themeSettings.mode,
+          autoPreference: () => themeSettings.autoDark,
+          setAutoPreference: (preference) => {
+            if (preference === 'dark' || preference === 'oled') {
+              const notify = themeSettings.mode === 'auto';
+              return setThemeSettings(
+                { autoDark: preference },
+                { persist: true, notify },
+              );
+            }
+            return themeSettings.autoDark;
+          },
+          settings: () => ({ ...themeSettings }),
+        };
+
+        window.addEventListener('storage', (event) => {
+          if (event.key === STORAGE_KEY) {
+            let nextSettings = { ...defaultSettings };
+            if (event.newValue) {
+              try {
+                nextSettings = sanitizeSettings(JSON.parse(event.newValue));
+              } catch (error) {
+                // Ignore parse errors and fall back to defaults.
+              }
+            }
+            themeSettings = nextSettings;
+            const resolved = resolveTheme(themeSettings);
+            applyThemeClasses(resolved);
+            syncLegacyThemePreference(themeSettings.mode, resolved);
+            dispatchThemeChange();
+          }
+        });
+
+        const handleSystemThemeChange = () => {
+          if (themeSettings.mode === 'auto') {
+            const resolved = resolveTheme(themeSettings);
+            applyThemeClasses(resolved);
+            syncLegacyThemePreference(themeSettings.mode, resolved);
+            dispatchThemeChange();
           }
         };
-        const savedTheme = localStorage.getItem('theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const initial = cycle.includes(savedTheme) ? savedTheme : prefersDark ? 'dark' : 'light';
-        apply(initial, false);
-        window.__themeController = {
-          apply: (mode) => apply(mode, true),
-          current: () => root.dataset.theme || 'light',
-          cycle,
-        };
+
+        if (typeof prefersDarkQuery.addEventListener === 'function') {
+          prefersDarkQuery.addEventListener('change', handleSystemThemeChange);
+        } else if (typeof prefersDarkQuery.addListener === 'function') {
+          prefersDarkQuery.addListener(handleSystemThemeChange);
+        }
+
+        dispatchThemeChange();
       })();
       window.tailwind = window.tailwind || {};
       window.tailwind.config = {
@@ -61,7 +238,7 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <link rel="stylesheet" href="/static/css/styles.css" />
   </head>
-  <body class="bg-slate-100 dark:bg-slate-950 min-h-screen font-[Inter] text-slate-800 dark:text-slate-100 transition-colors preloader-active">
+  <body class="bg-white dark:bg-slate-950 min-h-screen font-[Inter] text-slate-800 dark:text-slate-100 transition-colors preloader-active">
     <div id="preloader" class="preloader" role="status" aria-live="polite">
       <div class="preloader-content">
         <img
@@ -74,9 +251,15 @@
         <p class="preloader-text">Warming up your Inbox Steward…</p>
       </div>
     </div>
-    <nav class="relative bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 backdrop-blur z-40">
+    <nav class="relative bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 z-40">
       <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <div class="text-2xl font-semibold text-brand-600 dark:text-brand-400">{{ settings.app_name }}</div>
+        <a
+          href="/"
+          class="text-2xl font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-500/60 rounded"
+          aria-label="Go to home"
+        >
+          {{ settings.app_name }}
+        </a>
         <div class="flex items-center gap-3">
           <div class="hidden md:flex items-center gap-4 text-sm font-medium text-slate-600 dark:text-slate-300">
             <a href="/" data-nav-index="0" class="hover:text-brand-600 dark:hover:text-brand-400">Dashboard</a>
@@ -91,23 +274,185 @@
               rel="noopener noreferrer"
               >API Docs</a
             >
+            <div class="theme-menu-root" data-theme-menu-root>
+              <button
+                type="button"
+                data-theme-menu-toggle
+                class="inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs uppercase tracking-wide text-slate-600 dark:text-slate-200 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60 theme-toggle-control"
+                aria-haspopup="true"
+                aria-expanded="false"
+                aria-controls="theme-menu-desktop"
+              >
+                <span data-theme-icon class="text-base leading-none">☀️</span>
+                <span data-theme-label>Light</span>
+                <svg
+                  class="theme-menu-caret"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 4.5L6 7.5L9 4.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                id="theme-menu-desktop"
+                class="theme-menu"
+                data-theme-menu-panel
+                role="menu"
+                aria-hidden="true"
+              >
+                <div class="theme-menu-section" role="none">
+                  <p class="theme-menu-heading">Appearance</p>
+                  <label class="theme-menu-option">
+                    <input
+                      type="radio"
+                      name="theme-mode-desktop"
+                      value="light"
+                      data-theme-mode-option="light"
+                    />
+                    <span class="theme-menu-option-title">Light</span>
+                  </label>
+                  <label class="theme-menu-option">
+                    <input
+                      type="radio"
+                      name="theme-mode-desktop"
+                      value="dark"
+                      data-theme-mode-option="dark"
+                    />
+                    <span class="theme-menu-option-title">Dark</span>
+                  </label>
+                  <label class="theme-menu-option">
+                    <input
+                      type="radio"
+                      name="theme-mode-desktop"
+                      value="oled"
+                      data-theme-mode-option="oled"
+                    />
+                    <span class="theme-menu-option-title">OLED</span>
+                  </label>
+                  <label class="theme-menu-option">
+                    <input
+                      type="radio"
+                      name="theme-mode-desktop"
+                      value="auto"
+                      data-theme-mode-option="auto"
+                    />
+                    <span class="theme-menu-option-title">Auto</span>
+                  </label>
+                </div>
+                <div class="theme-menu-section" data-theme-auto-group aria-hidden="true">
+                  <p class="theme-menu-heading">When system is dark</p>
+                  <label class="theme-menu-option">
+                    <input
+                      type="radio"
+                      name="theme-auto-desktop"
+                      value="dark"
+                      data-theme-auto-option="dark"
+                    />
+                    <span class="theme-menu-option-title">Dimmed dark</span>
+                  </label>
+                  <label class="theme-menu-option">
+                    <input
+                      type="radio"
+                      name="theme-auto-desktop"
+                      value="oled"
+                      data-theme-auto-option="oled"
+                    />
+                    <span class="theme-menu-option-title">Pure black (OLED)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="md:hidden theme-menu-root" data-theme-menu-root>
             <button
               type="button"
-              data-theme-toggle
-              class="inline-flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
+              data-theme-menu-toggle
+              class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-lg text-slate-600 dark:text-slate-200 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60 theme-toggle-control"
+              aria-label="Open theme menu"
+              aria-haspopup="true"
+              aria-expanded="false"
+              aria-controls="theme-menu-compact"
             >
-              <span data-theme-icon class="text-base leading-none">☀️</span>
-              <span data-theme-label>Light</span>
+              <span data-theme-icon class="leading-none">☀️</span>
             </button>
+            <div
+              id="theme-menu-compact"
+              class="theme-menu theme-menu-compact"
+              data-theme-menu-panel
+              role="menu"
+              aria-hidden="true"
+            >
+              <div class="theme-menu-section" role="none">
+                <p class="theme-menu-heading">Appearance</p>
+                <label class="theme-menu-option">
+                  <input
+                    type="radio"
+                    name="theme-mode-compact"
+                    value="light"
+                    data-theme-mode-option="light"
+                  />
+                  <span class="theme-menu-option-title">Light</span>
+                </label>
+                <label class="theme-menu-option">
+                  <input
+                    type="radio"
+                    name="theme-mode-compact"
+                    value="dark"
+                    data-theme-mode-option="dark"
+                  />
+                  <span class="theme-menu-option-title">Dark</span>
+                </label>
+                <label class="theme-menu-option">
+                  <input
+                    type="radio"
+                    name="theme-mode-compact"
+                    value="oled"
+                    data-theme-mode-option="oled"
+                  />
+                  <span class="theme-menu-option-title">OLED</span>
+                </label>
+                <label class="theme-menu-option">
+                  <input
+                    type="radio"
+                    name="theme-mode-compact"
+                    value="auto"
+                    data-theme-mode-option="auto"
+                  />
+                  <span class="theme-menu-option-title">Auto</span>
+                </label>
+              </div>
+              <div class="theme-menu-section" data-theme-auto-group aria-hidden="true">
+                <p class="theme-menu-heading">When system is dark</p>
+                <label class="theme-menu-option">
+                  <input
+                    type="radio"
+                    name="theme-auto-compact"
+                    value="dark"
+                    data-theme-auto-option="dark"
+                  />
+                  <span class="theme-menu-option-title">Dimmed dark</span>
+                </label>
+                <label class="theme-menu-option">
+                  <input
+                    type="radio"
+                    name="theme-auto-compact"
+                    value="oled"
+                    data-theme-auto-option="oled"
+                  />
+                  <span class="theme-menu-option-title">Pure black (OLED)</span>
+                </label>
+              </div>
+            </div>
           </div>
-          <button
-            type="button"
-            data-theme-toggle
-            class="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 text-lg text-slate-500 dark:text-slate-300 hover:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/60"
-            aria-label="Switch theme"
-          >
-            <span data-theme-icon class="leading-none">☀️</span>
-          </button>
           <button
             type="button"
             class="mobile-nav-toggle md:hidden"
@@ -137,14 +482,68 @@
             >API Docs</a
           >
           <div class="mobile-nav-divider"></div>
-          <button
-            type="button"
-            data-theme-toggle
-            class="mobile-nav-theme"
-          >
-            <span data-theme-icon class="leading-none">☀️</span>
-            <span data-theme-label class="uppercase text-xs tracking-wide">Light</span>
-          </button>
+          <div class="mobile-theme-menu" role="presentation">
+            <p class="mobile-theme-heading">Theme</p>
+            <div class="mobile-theme-options" role="radiogroup" aria-label="Theme mode">
+              <label class="theme-menu-option">
+                <input
+                  type="radio"
+                  name="theme-mode-mobile"
+                  value="light"
+                  data-theme-mode-option="light"
+                />
+                <span class="theme-menu-option-title">Light</span>
+              </label>
+              <label class="theme-menu-option">
+                <input
+                  type="radio"
+                  name="theme-mode-mobile"
+                  value="dark"
+                  data-theme-mode-option="dark"
+                />
+                <span class="theme-menu-option-title">Dark</span>
+              </label>
+              <label class="theme-menu-option">
+                <input
+                  type="radio"
+                  name="theme-mode-mobile"
+                  value="oled"
+                  data-theme-mode-option="oled"
+                />
+                <span class="theme-menu-option-title">OLED</span>
+              </label>
+              <label class="theme-menu-option">
+                <input
+                  type="radio"
+                  name="theme-mode-mobile"
+                  value="auto"
+                  data-theme-mode-option="auto"
+                />
+                <span class="theme-menu-option-title">Auto</span>
+              </label>
+            </div>
+            <div class="mobile-theme-auto" data-theme-auto-group aria-hidden="true">
+              <p class="mobile-theme-subheading">When system is dark</p>
+              <label class="theme-menu-option">
+                <input
+                  type="radio"
+                  name="theme-auto-mobile"
+                  value="dark"
+                  data-theme-auto-option="dark"
+                />
+                <span class="theme-menu-option-title">Dimmed dark</span>
+              </label>
+              <label class="theme-menu-option">
+                <input
+                  type="radio"
+                  name="theme-auto-mobile"
+                  value="oled"
+                  data-theme-auto-option="oled"
+                />
+                <span class="theme-menu-option-title">Pure black (OLED)</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
     </nav>
@@ -159,91 +558,277 @@
       const controller = window.__themeController;
       const icons = { light: '☀️', dark: '🌙', oled: '🖤' };
       const labels = { light: 'Light', dark: 'Dark', oled: 'OLED' };
-      const themeToggles = Array.from(document.querySelectorAll('[data-theme-toggle]'));
+      const themeMenuRoots = Array.from(document.querySelectorAll('[data-theme-menu-root]'));
+      const themeMenuToggles = Array.from(document.querySelectorAll('[data-theme-menu-toggle]'));
+      const themeModeInputs = Array.from(document.querySelectorAll('[data-theme-mode-option]'));
+      const themeAutoGroups = Array.from(document.querySelectorAll('[data-theme-auto-group]'));
+      const themeAutoInputs = Array.from(document.querySelectorAll('[data-theme-auto-option]'));
 
-      const updateThemeToggle = (toggle) => {
-        if (!controller || !toggle) return;
-        const current = controller.current();
-        const icon = toggle.querySelector('[data-theme-icon]');
-        const label = toggle.querySelector('[data-theme-label]');
-        if (icon) icon.textContent = icons[current] || '☀️';
-        if (label) label.textContent = labels[current] || current;
-        toggle.setAttribute('aria-label', `Switch theme (current: ${labels[current] || current})`);
+      const getThemeSettings = () => {
+        if (controller && typeof controller.settings === 'function') {
+          return controller.settings();
+        }
+        return { mode: 'light', autoDark: 'dark' };
       };
 
-      const updateAllThemeToggles = () => {
-        themeToggles.forEach((toggle) => updateThemeToggle(toggle));
+      const getResolvedTheme = () => {
+        if (controller && typeof controller.current === 'function') {
+          return controller.current();
+        }
+        return 'light';
       };
 
-      if (controller && themeToggles.length) {
-        themeToggles.forEach((toggle) => {
-          toggle.addEventListener('click', () => {
-            const cycle = controller.cycle;
-            const current = controller.current();
-            const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
-            controller.apply(next);
-            updateAllThemeToggles();
-          });
+      const formatDisplayLabel = (settings, resolved) => {
+        if (!settings || !settings.mode) {
+          return labels[resolved] || resolved;
+        }
+        if (settings.mode === 'auto') {
+          const target = settings.autoDark === 'oled' ? 'OLED' : 'Dark';
+          return `Auto (${target})`;
+        }
+        return labels[settings.mode] || settings.mode;
+      };
+
+      const updateThemeDisplays = () => {
+        const settings = getThemeSettings();
+        const resolved = getResolvedTheme();
+        const iconValue = icons[resolved] || '☀️';
+        const labelText = formatDisplayLabel(settings, resolved);
+        themeMenuToggles.forEach((toggle) => {
+          const iconEl = toggle.querySelector('[data-theme-icon]');
+          const labelEl = toggle.querySelector('[data-theme-label]');
+          if (iconEl) iconEl.textContent = iconValue;
+          if (labelEl) labelEl.textContent = labelText;
+          if (toggle.hasAttribute('aria-label')) {
+            toggle.setAttribute('aria-label', `Change theme (current: ${labelText})`);
+          }
         });
-        updateAllThemeToggles();
-      }
+      };
+
+      const updateThemeOptions = () => {
+        const settings = getThemeSettings();
+        themeModeInputs.forEach((input) => {
+          const value = input.dataset.themeModeOption;
+          if (!value) return;
+          if (value === 'auto') {
+            input.checked = settings.mode === 'auto';
+          } else {
+            input.checked = settings.mode === value;
+          }
+        });
+        themeAutoGroups.forEach((group) => {
+          const isVisible = settings.mode === 'auto';
+          group.classList.toggle('is-visible', isVisible);
+          group.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+        });
+        themeAutoInputs.forEach((input) => {
+          const value = input.dataset.themeAutoOption;
+          if (!value) return;
+          input.checked = settings.autoDark === value;
+        });
+      };
+
+      const updateThemeUI = () => {
+        updateThemeDisplays();
+        updateThemeOptions();
+      };
+
+      let openThemeMenuRoot = null;
+
+      const closeThemeMenu = (root) => {
+        if (!root) return;
+        const toggle = root.querySelector('[data-theme-menu-toggle]');
+        const panel = root.querySelector('[data-theme-menu-panel]');
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', 'false');
+          toggle.classList.remove('is-open');
+        }
+        if (panel) {
+          panel.setAttribute('aria-hidden', 'true');
+          panel.classList.remove('is-open');
+        }
+        if (openThemeMenuRoot === root) {
+          openThemeMenuRoot = null;
+        }
+      };
+
+      const closeAllThemeMenus = () => {
+        themeMenuRoots.forEach((root) => closeThemeMenu(root));
+      };
+
+      const openThemeMenu = (root) => {
+        if (!root) return;
+        const toggle = root.querySelector('[data-theme-menu-toggle]');
+        const panel = root.querySelector('[data-theme-menu-panel]');
+        if (!toggle || !panel) return;
+        closeAllThemeMenus();
+        toggle.setAttribute('aria-expanded', 'true');
+        toggle.classList.add('is-open');
+        panel.setAttribute('aria-hidden', 'false');
+        panel.classList.add('is-open');
+        openThemeMenuRoot = root;
+      };
+
+      themeMenuRoots.forEach((root) => {
+        const toggle = root.querySelector('[data-theme-menu-toggle]');
+        const panel = root.querySelector('[data-theme-menu-panel]');
+        if (!toggle) return;
+        toggle.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const expanded = toggle.getAttribute('aria-expanded') === 'true';
+          if (expanded) {
+            closeThemeMenu(root);
+          } else {
+            openThemeMenu(root);
+          }
+        });
+        if (panel) {
+          panel.addEventListener('click', (event) => {
+            event.stopPropagation();
+          });
+        }
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!openThemeMenuRoot) return;
+        if (!openThemeMenuRoot.contains(event.target)) {
+          closeAllThemeMenus();
+        }
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && openThemeMenuRoot) {
+          closeAllThemeMenus();
+        }
+      });
+
+      themeModeInputs.forEach((input) => {
+        input.addEventListener('change', (event) => {
+          if (!controller || !event.target.checked) return;
+          const value = event.target.dataset.themeModeOption;
+          if (!value) return;
+          controller.apply(value);
+          updateThemeUI();
+          if (value !== 'auto') {
+            closeAllThemeMenus();
+          }
+        });
+      });
+
+      themeAutoInputs.forEach((input) => {
+        input.addEventListener('change', (event) => {
+          if (!controller || !event.target.checked) return;
+          const value = event.target.dataset.themeAutoOption;
+          if (!value) return;
+          controller.setAutoPreference(value);
+          updateThemeUI();
+        });
+      });
+
+      document.addEventListener('themechange', updateThemeUI);
+      updateThemeUI();
 
       const preloader = document.getElementById('preloader');
       const preloaderLogo = document.querySelector('[data-preloader-logo]');
-      const PRELOADER_MIN_MS = 900;
-      const PRELOADER_FAILSAFE_MS = 7000;
-      const preloaderStart = performance.now();
-      let preloaderLaunchStarted = false;
+      const SKIP_PRELOADER_KEY = 'inbox-steward:skip-preloader';
 
-      if (!preloader) {
-        document.body.classList.remove('preloader-active');
-      }
-
-      const removePreloader = () => {
-        if (!preloader || preloader.classList.contains('is-hidden')) {
-          document.body.classList.remove('preloader-active');
-          return;
+      const resolveNavigationType = () => {
+        const [entry] = performance.getEntriesByType('navigation');
+        if (entry && entry.type) {
+          return entry.type;
         }
-        preloader.classList.add('is-hidden');
-        document.body.classList.remove('preloader-active');
-        window.setTimeout(() => {
-          if (preloader && preloader.parentElement) {
-            preloader.parentElement.removeChild(preloader);
+        if (performance.navigation) {
+          const { type } = performance.navigation;
+          if (type === performance.navigation.TYPE_RELOAD || type === 1) {
+            return 'reload';
           }
-        }, 900);
-      };
-
-      const launchPreloader = () => {
-        if (!preloader || preloaderLaunchStarted) {
-          document.body.classList.remove('preloader-active');
-          return;
+          if (type === performance.navigation.TYPE_BACK_FORWARD || type === 2) {
+            return 'back_forward';
+          }
         }
-        preloaderLaunchStarted = true;
-        preloader.classList.add('is-launching');
-        document.body.classList.remove('preloader-active');
-        window.setTimeout(removePreloader, 820);
+        return 'navigate';
       };
 
-      const finishPreloader = () => {
-        if (!preloader || preloaderLaunchStarted) {
-          return;
+      const navigationType = resolveNavigationType();
+      let skipRequested = false;
+      try {
+        skipRequested = sessionStorage.getItem(SKIP_PRELOADER_KEY) === 'true';
+        if (skipRequested) {
+          sessionStorage.removeItem(SKIP_PRELOADER_KEY);
         }
-        const elapsed = performance.now() - preloaderStart;
-        const wait = Math.max(PRELOADER_MIN_MS - elapsed, 0);
-        window.setTimeout(launchPreloader, wait);
-      };
-
-      if (preloaderLogo) {
-        preloaderLogo.addEventListener('error', () => {
-          preloaderLogo.classList.add('is-hidden');
-        });
+      } catch (error) {
+        skipRequested = false;
       }
 
-      window.addEventListener('load', () => {
-        window.setTimeout(finishPreloader, 200);
-      });
+      const shouldRunPreloader = Boolean(preloader) && !(skipRequested && navigationType !== 'reload');
 
-      window.setTimeout(launchPreloader, PRELOADER_FAILSAFE_MS);
+      if (!shouldRunPreloader) {
+        document.body.classList.remove('preloader-active');
+        if (preloader && preloader.parentElement) {
+          preloader.classList.add('is-hidden');
+          preloader.parentElement.removeChild(preloader);
+        }
+      } else {
+        const PRELOADER_MIN_MS = 1400;
+        const PRELOADER_FAILSAFE_MS = 7000;
+        const preloaderStart = performance.now();
+        let preloaderLaunchStarted = false;
+
+        const removePreloader = () => {
+          if (!preloader || preloader.classList.contains('is-hidden')) {
+            document.body.classList.remove('preloader-active');
+            return;
+          }
+          preloader.classList.add('is-hidden');
+          document.body.classList.remove('preloader-active');
+          window.setTimeout(() => {
+            if (preloader && preloader.parentElement) {
+              preloader.parentElement.removeChild(preloader);
+            }
+          }, 1100);
+        };
+
+        const launchPreloader = () => {
+          if (!preloader || preloaderLaunchStarted) {
+            document.body.classList.remove('preloader-active');
+            return;
+          }
+          preloaderLaunchStarted = true;
+          preloader.classList.add('is-launching');
+          document.body.classList.remove('preloader-active');
+          window.setTimeout(removePreloader, 1250);
+        };
+
+        const finishPreloader = () => {
+          if (!preloader || preloaderLaunchStarted) {
+            return;
+          }
+          const elapsed = performance.now() - preloaderStart;
+          const wait = Math.max(PRELOADER_MIN_MS - elapsed, 0);
+          window.setTimeout(launchPreloader, wait);
+        };
+
+        if (preloaderLogo) {
+          preloaderLogo.addEventListener('error', () => {
+            preloaderLogo.classList.add('is-hidden');
+          });
+        }
+
+        window.addEventListener('load', () => {
+          window.setTimeout(finishPreloader, 200);
+        });
+
+        window.setTimeout(launchPreloader, PRELOADER_FAILSAFE_MS);
+      }
+
+      window.addEventListener('beforeunload', () => {
+        try {
+          sessionStorage.setItem(SKIP_PRELOADER_KEY, 'true');
+        } catch (error) {
+          // Ignore storage exceptions; preloader will show next visit.
+        }
+      });
 
       const navRoot = document.querySelector('nav');
       const navToggle = document.querySelector('[data-mobile-nav-toggle]');
@@ -278,6 +863,7 @@
       if (navToggle && navPanel) {
         navToggle.addEventListener('click', () => {
           const expanded = navToggle.getAttribute('aria-expanded') === 'true';
+          closeAllThemeMenus();
           setMobileNavState(!expanded);
         });
       }
@@ -336,6 +922,7 @@
 
       navLinks.forEach((link) => {
         link.addEventListener('click', (event) => {
+          closeAllThemeMenus();
           closeMobileNav();
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
             return;

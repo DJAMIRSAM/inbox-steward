@@ -48,6 +48,7 @@ class Settings(BaseSettings):
         description="Bearer token for XOAUTH2 authentication",
     )
     imap_mailbox: str = Field("INBOX", env="IMAP_MAILBOX")
+    imap_archive_mailbox: str = Field("Archive", env="IMAP_ARCHIVE_MAILBOX")
 
     exchange_tenant_id: Optional[str] = Field(
         None,
@@ -149,7 +150,7 @@ class Settings(BaseSettings):
     pdf_temp_dir: Path = Field(Path("/tmp/pdf-cache"), env="PDF_TEMP_DIR")
 
     class Config:
-        env_file = ".env"
+        env_file = "stack.env"
         env_file_encoding = "utf-8"
         case_sensitive = False
 
